@@ -1,19 +1,21 @@
-const express    = require('express');
-const cors       = require('cors');
-const authRoutes = require('./routes/authRoutes');
+const express         = require('express');
+const cors            = require('cors');
+const authRoutes      = require('./routes/authRoutes');
+const livraisonRoutes = require('./routes/livraisonRoutes');
+//    ^ tous les require() EN HAUT du fichier, avant tout app.use()
 
 const app = express();
 
-// Middlewares globaux
+// ─── Middlewares globaux ───────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Routes
-// Toutes les routes de authRoutes seront préfixées par /api/auth
-app.use('/api/auth', authRoutes);
+// ─── Routes ───────────────────────────────────────────────────────────────────
+app.use('/api/auth',       authRoutes);
+app.use('/api/livraisons', livraisonRoutes);
 
-// Route de test
+// ─── Route de test ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -22,7 +24,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Middleware 404 — si aucune route ne correspond
+// ─── Middleware 404 ───────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({
     success: false,
