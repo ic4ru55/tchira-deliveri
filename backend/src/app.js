@@ -2,6 +2,8 @@ const express         = require('express');
 const cors            = require('cors');
 const authRoutes      = require('./routes/authRoutes');
 const livraisonRoutes = require('./routes/livraisonRoutes');
+const tarifRoutes = require('./routes/tarifRoutes');
+
 //    ^ tous les require() EN HAUT du fichier, avant tout app.use()
 
 const app = express();
@@ -14,7 +16,7 @@ app.use(express.urlencoded({ extended: false }));
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth',       authRoutes);
 app.use('/api/livraisons', livraisonRoutes);
-
+app.use('/api/tarifs', tarifRoutes);
 // ─── Route de test ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({

@@ -3,15 +3,15 @@ const mongoose = require('mongoose');
 const DeliverySchema = new mongoose.Schema(
   {
     client: {
-      type:     mongoose.Schema.Types.ObjectId,  // référence vers un User
-      ref:      'User',                           // nom du modèle lié
+      type:     mongoose.Schema.Types.ObjectId,
+      ref:      'User',
       required: true,
     },
 
     livreur: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref:  'User',
-      default: null,   // pas encore assigné quand la livraison est créée
+      type:    mongoose.Schema.Types.ObjectId,
+      ref:     'User',
+      default: null,
     },
 
     adresse_depart: {
@@ -26,27 +26,26 @@ const DeliverySchema = new mongoose.Schema(
       trim:     true,
     },
 
-    // Coordonnées GPS du départ
     coordonnees_depart: {
       lat: { type: Number, default: 0 },
       lng: { type: Number, default: 0 },
     },
 
-    // Coordonnées GPS de l'arrivée
     coordonnees_arrivee: {
       lat: { type: Number, default: 0 },
       lng: { type: Number, default: 0 },
     },
 
-    statut: {
+    categorie_colis: {
       type:    String,
-      enum:    ['en_attente', 'en_cours', 'en_livraison', 'livre', 'annule'],
-      default: 'en_attente',
+      enum:    ['leger', 'moyen', 'lourd', 'tres_lourd'],
+      default: 'leger',
     },
 
-    prix: {
-      type:    Number,
-      default: 0,
+    zone: {
+      type:    String,
+      enum:    ['zone_1', 'zone_2', 'zone_3'],
+      default: 'zone_1',
     },
 
     description_colis: {
@@ -55,7 +54,27 @@ const DeliverySchema = new mongoose.Schema(
       trim:    true,
     },
 
-    // Position GPS live du livreur (mise à jour en temps réel via Socket.io)
+    statut: {
+      type:    String,
+      enum:    ['en_attente', 'en_cours', 'en_livraison', 'livre', 'annule'],
+      default: 'en_attente',
+    },
+
+    prix_base: {
+      type:    Number,
+      default: 0,
+    },
+
+    frais_zone: {
+      type:    Number,
+      default: 0,
+    },
+
+    prix: {
+      type:    Number,
+      default: 0,
+    },
+
     position_livreur: {
       lat: { type: Number, default: 0 },
       lng: { type: Number, default: 0 },

@@ -4,12 +4,12 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // Détecte automatiquement Chrome ou Android
   static String get baseUrl {
     if (kIsWeb) return 'http://localhost:5000/api';
     return 'http://10.0.2.2:5000/api';
   }
 
+  // ─── Token ────────────────────────────────────────────────────────────────
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
@@ -24,6 +24,7 @@ class ApiService {
     return headers;
   }
 
+  // ─── AUTH ─────────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> register({
     required String nom,
     required String email,
@@ -68,10 +69,39 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
-  static Future<Map<String, dynamic>> creerLivraison({
+  // ─── TARIFS ───────────────────────────────────────────────────────────────
+  static Future<Map<String, dynamic>> getTarifs() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/tarifs'),
+      headers: await _headers(withAuth: false),
+    );
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> calculerPrix({
+    required String categorie,
+    required String zoneCode,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/tarifs/calculer'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'categorie': categorie,
+        'zone_code': zoneCode,
+      }),
+    );
+    return jsonDecode(response.body);
+  }
+
+  // ─── LIVRAISONS ───────────────────────────────────────────────────────────
+  static Future<Map<String, dynamic>> creerLivraisonComplete({
     required String adresseDepart,
     required String adresseArrivee,
+    required String categorie,
+    required String zoneCode,
     required double prix,
+    required double prixBase,
+    required double fraisZone,
     String description = '',
   }) async {
     final response = await http.post(
@@ -80,7 +110,11 @@ class ApiService {
       body: jsonEncode({
         'adresse_depart':    adresseDepart,
         'adresse_arrivee':   adresseArrivee,
+        'categorie_colis':   categorie,
+        'zone':              zoneCode,
         'prix':              prix,
+        'prix_base':         prixBase,
+        'frais_zone':        fraisZone,
         'description_colis': description,
       }),
     );
@@ -103,6 +137,14 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
+  static Future<Map<String, dynamic>> getLivraison(String id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/livraisons/$id'),
+      headers: await _headers(),
+    );
+    return jsonDecode(response.body);
+  }
+
   static Future<Map<String, dynamic>> accepterLivraison(String id) async {
     final response = await http.put(
       Uri.parse('$baseUrl/livraisons/$id/accepter'),
@@ -117,6 +159,14 @@ class ApiService {
       Uri.parse('$baseUrl/livraisons/$id/statut'),
       headers: await _headers(),
       body: jsonEncode({'statut': statut}),
+    );
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> annulerLivraison(String id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/livraisons/$id'),
+      headers: await _headers(),
     );
     return jsonDecode(response.body);
   }
