@@ -23,16 +23,16 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
   final _nomClientCtrl = TextEditingController();
   final _telClientCtrl = TextEditingController();
 
-  bool          _formVisible        = false;
-  bool          _chargementTarifs   = true;
-  bool          _calculEnCours      = false;
-  bool          _surDevis           = false;
-  bool          _creationEnCours    = false;
+  bool          _formVisible         = false;
+  bool          _chargementTarifs    = true;
+  bool          _calculEnCours       = false;
+  bool          _surDevis            = false;
+  bool          _creationEnCours     = false;
 
-  List<dynamic> _tarifs             = [];
-  List<dynamic> _zones              = [];
-  List<dynamic> _livraisonsEnCours  = [];
-  List<dynamic> _livraisonsAttente  = [];
+  List<dynamic> _tarifs              = [];
+  List<dynamic> _zones               = [];
+  List<dynamic> _livraisonsEnCours   = [];
+  List<dynamic> _livraisonsAttente   = [];
   List<dynamic> _livreursDisponibles = [];
 
   String?       _categorieSelectionnee;
@@ -65,9 +65,11 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     super.dispose();
   }
 
+  // ─── Chargements ──────────────────────────────────────────────────────────
   Future<void> _chargerTarifs() async {
     try {
       final reponse = await ApiService.getTarifs();
+      if (!mounted) return;
       if (reponse['success'] == true) {
         setState(() {
           _tarifs           = reponse['tarifs'];
@@ -76,43 +78,46 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
         });
       }
     } catch (e) {
-      setState(() => _chargementTarifs = false);
+      if (mounted) setState(() => _chargementTarifs = false);
     }
   }
 
   Future<void> _chargerLivraisons() async {
     setState(() => _chargementLivraisons = true);
     try {
-      final enCours  = await ApiService.toutesLesLivraisons(
-          statut: 'en_cours');
-      final attente  = await ApiService.toutesLesLivraisons(
-          statut: 'en_attente');
-      final enLivraison = await ApiService.toutesLesLivraisons(
-          statut: 'en_livraison');
+      // 📚 On fait 3 appels en parallèle avec Future.wait
+      // Au lieu de les faire l'un après l'autre (3x plus lent)
+      // Future.wait attend que TOUS soient terminés avant de continuer
+      final resultats = await Future.wait([
+        ApiService.toutesLesLivraisons(statut: 'en_attente'),
+        ApiService.toutesLesLivraisons(statut: 'en_cours'),
+        ApiService.toutesLesLivraisons(statut: 'en_livraison'),
+      ]);
+
+      if (!mounted) return;
 
       setState(() {
-        _livraisonsAttente = [
-          ...(attente['livraisons'] ?? []),
-        ];
+        _livraisonsAttente = resultats[0]['livraisons'] ?? [];
         _livraisonsEnCours = [
-          ...(enCours['livraisons']     ?? []),
-          ...(enLivraison['livraisons'] ?? []),
+          ...(resultats[1]['livraisons'] ?? []),
+          ...(resultats[2]['livraisons'] ?? []),
         ];
         _chargementLivraisons = false;
       });
     } catch (e) {
-      setState(() => _chargementLivraisons = false);
+      if (mounted) setState(() => _chargementLivraisons = false);
     }
   }
 
   Future<void> _chargerLivreursDisponibles() async {
     try {
       final reponse = await ApiService.getLivreursDisponibles();
+      if (!mounted) return;
       if (reponse['success'] == true) {
         setState(() => _livreursDisponibles = reponse['livreurs']);
       }
     } catch (e) {
-      // silencieux
+      // silencieux — pas bloquant
     }
   }
 
@@ -125,6 +130,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
         categorie: _categorieSelectionnee!,
         zoneCode:  _zoneSelectionnee!,
       );
+      if (!mounted) return;
       if (reponse['success'] == true) {
         setState(() {
           _surDevis  = reponse['sur_devis'] ?? false;
@@ -136,10 +142,11 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     } catch (e) {
       // silencieux
     } finally {
-      setState(() => _calculEnCours = false);
+      if (mounted) setState(() => _calculEnCours = false);
     }
   }
 
+  // ─── Création commande ────────────────────────────────────────────────────
   Future<void> _creerCommande() async {
     if (_nomClientCtrl.text.isEmpty || _telClientCtrl.text.isEmpty) {
       _snack('Remplis le nom et le téléphone du client', Colors.red);
@@ -160,23 +167,27 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
 
     setState(() => _creationEnCours = true);
 
+    // ✅ Capturer AVANT tout await — règle fondamentale Flutter async
+    // context peut devenir invalide après un await si le widget est détruit
+    final provider  = context.read<LivraisonProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
     try {
-      final provider = context.read<LivraisonProvider>();
-      final succes   = await provider.creerLivraison(
+      final succes = await provider.creerLivraison(
         adresseDepart:  _departCtrl.text.trim(),
         adresseArrivee: _arriveeCtrl.text.trim(),
         categorie:      _categorieSelectionnee!,
         zoneCode:       _zoneSelectionnee!,
-        prix:           _prixTotal   ?? 0,
-        prixBase:       _prixBase    ?? 0,
-        fraisZone:      _fraisZone   ?? 0,
+        prix:           _prixTotal  ?? 0,
+        prixBase:       _prixBase   ?? 0,
+        fraisZone:      _fraisZone  ?? 0,
         description:    _descCtrl.text.trim(),
       );
 
       if (!mounted) return;
 
       if (succes) {
-        // Si un livreur est sélectionné → assigner directement
+        // Assigner le livreur si sélectionné
         if (_livreurSelectionne != null &&
             provider.mesLivraisons.isNotEmpty) {
           final livraisonId = provider.mesLivraisons.first.id;
@@ -187,18 +198,28 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
         }
 
         _viderFormulaire();
-        _snack('✅ Commande créée avec succès !', Colors.green);
-        _chargerLivraisons();
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('✅ Commande créée avec succès !'),
+          backgroundColor: Colors.green,
+        ));
+        if (mounted) _chargerLivraisons();
       } else {
-        _snack('❌ Erreur lors de la création', Colors.red);
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('❌ Erreur lors de la création'),
+          backgroundColor: Colors.red,
+        ));
       }
     } finally {
-      setState(() => _creationEnCours = false);
+      if (mounted) setState(() => _creationEnCours = false);
     }
   }
 
+  // ─── Assignation livreur ──────────────────────────────────────────────────
   Future<void> _assignerLivreur(
       String livraisonId, String livreurId) async {
+    // ✅ Capturer le messenger AVANT le await
+    final messenger = ScaffoldMessenger.of(context);
+
     try {
       final reponse = await ApiService.assignerLivreur(
         livraisonId: livraisonId,
@@ -206,28 +227,61 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
       );
       if (!mounted) return;
       if (reponse['success'] == true) {
-        _snack('✅ Livreur assigné !', Colors.green);
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('✅ Livreur assigné !'),
+          backgroundColor: Colors.green,
+        ));
         _chargerLivraisons();
         _chargerLivreursDisponibles();
       } else {
-        _snack(reponse['message'] ?? 'Erreur', Colors.red);
+        messenger.showSnackBar(SnackBar(
+          content:         Text(reponse['message'] ?? 'Erreur'),
+          backgroundColor: Colors.red,
+        ));
       }
     } catch (e) {
-      _snack('Erreur réseau', Colors.red);
+      messenger.showSnackBar(const SnackBar(
+        content:         Text('Erreur réseau'),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 
+  // ─── Annulation ───────────────────────────────────────────────────────────
   Future<void> _annulerLivraison(String id) async {
+    // ✅ Capturer AVANT le await
+    final messenger = ScaffoldMessenger.of(context);
+
     try {
       final reponse = await ApiService.annulerLivraison(id);
       if (!mounted) return;
       if (reponse['success'] == true) {
-        _snack('Livraison annulée', Colors.orange);
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('Livraison annulée'),
+          backgroundColor: Colors.orange,
+        ));
         _chargerLivraisons();
       }
     } catch (e) {
-      _snack('Erreur réseau', Colors.red);
+      messenger.showSnackBar(const SnackBar(
+        content:         Text('Erreur réseau'),
+        backgroundColor: Colors.red,
+      ));
     }
+  }
+
+  // ─── Déconnexion ──────────────────────────────────────────────────────────
+  Future<void> _deconnecter() async {
+    // ✅ Capturer authProvider ET navigator AVANT le await
+    final auth      = context.read<AuthProvider>();
+    final navigator = Navigator.of(context);
+
+    await auth.deconnecter();
+
+    if (!mounted) return;
+    navigator.pushReplacement(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
   }
 
   void _viderFormulaire() {
@@ -247,21 +301,15 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     });
   }
 
+  // 📚 _snack reste utile pour les appels synchrones (validations)
+  // Pour les appels après await, on utilise ScaffoldMessenger capturé avant
   void _snack(String msg, Color couleur) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: couleur),
     );
   }
 
-  Future<void> _deconnecter() async {
-    await context.read<AuthProvider>().deconnecter();
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
-  }
-
+  // ─── BUILD ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -285,8 +333,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
             ),
             Text(
               'Réceptionniste : ${auth.user?.nom ?? ""}',
-              style: const TextStyle(
-                  color: Colors.white70, fontSize: 12),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ],
         ),
@@ -304,9 +351,9 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
           ),
         ],
         bottom: TabBar(
-          controller:        _tabController,
-          indicatorColor:    const Color(0xFFF97316),
-          labelColor:        Colors.white,
+          controller:           _tabController,
+          indicatorColor:       const Color(0xFFF97316),
+          labelColor:           Colors.white,
           unselectedLabelColor: Colors.white60,
           tabs: const [
             Tab(icon: Icon(Icons.add_circle_outline), text: 'Commandes'),
@@ -323,7 +370,6 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
         ],
       ),
 
-      // Bouton nouvelle commande
       floatingActionButton: _tabController.index == 0
           ? FloatingActionButton.extended(
               onPressed: () =>
@@ -337,7 +383,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Onglet commandes ──────────────────────────────────────────────────────
+  // ─── Onglet commandes ─────────────────────────────────────────────────────
   Widget _ongletCommandes() {
     return Column(
       children: [
@@ -377,7 +423,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                     : RefreshIndicator(
                         onRefresh: _chargerLivraisons,
                         child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
+                          padding:   const EdgeInsets.all(16),
                           itemCount: _livraisonsAttente.length,
                           itemBuilder: (context, index) =>
                               _carteCommandeAttente(
@@ -389,7 +435,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Onglet en cours ───────────────────────────────────────────────────────
+  // ─── Onglet en cours ──────────────────────────────────────────────────────
   Widget _ongletEnCours() {
     if (_chargementLivraisons) {
       return const Center(child: CircularProgressIndicator());
@@ -413,7 +459,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte info client ─────────────────────────────────────────────────────
+  // ─── Carte info client ────────────────────────────────────────────────────
   Widget _carteInfoClient() {
     return _conteneur(
       titre: '📞 Client (commande par téléphone)',
@@ -438,7 +484,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte adresses ────────────────────────────────────────────────────────
+  // ─── Carte adresses ───────────────────────────────────────────────────────
   Widget _carteAdresses() {
     return _conteneur(
       titre: '📍 Adresses',
@@ -469,7 +515,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte catégories ──────────────────────────────────────────────────────
+  // ─── Carte catégories ─────────────────────────────────────────────────────
   Widget _carteCategories() {
     if (_chargementTarifs) {
       return const Center(child: CircularProgressIndicator());
@@ -509,7 +555,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                     child: Text(
                       tarif['label'],
                       style: TextStyle(
-                        color: selectionne
+                        color:      selectionne
                             ? Colors.white
                             : Colors.black87,
                         fontWeight: FontWeight.w600,
@@ -522,7 +568,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                         ? 'Sur devis'
                         : '${_formatPrix(tarif['prix_base'])} FCFA',
                     style: TextStyle(
-                      color: selectionne
+                      color:      selectionne
                           ? Colors.white70
                           : const Color(0xFF0D7377),
                       fontWeight: FontWeight.bold,
@@ -538,7 +584,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte zones ───────────────────────────────────────────────────────────
+  // ─── Carte zones ──────────────────────────────────────────────────────────
   Widget _carteZones() {
     if (_chargementTarifs) return const SizedBox.shrink();
 
@@ -547,7 +593,11 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
       child: Column(
         children: _zones.map((zone) {
           final selectionne = _zoneSelectionnee == zone['code'];
-          final frais       = zone['frais_supplementaires'] as int;
+
+          // ✅ Cast sécurisé — évite le crash si le backend renvoie un double
+          final frais = (zone['frais_supplementaires'] as num?)
+                  ?.toInt() ??
+              0;
 
           return GestureDetector(
             onTap: () {
@@ -578,7 +628,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                         Text(
                           zone['nom'],
                           style: TextStyle(
-                            color: selectionne
+                            color:      selectionne
                                 ? Colors.white
                                 : Colors.black87,
                             fontWeight: FontWeight.w600,
@@ -588,7 +638,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                         Text(
                           zone['description'],
                           style: TextStyle(
-                            color: selectionne
+                            color:    selectionne
                                 ? Colors.white60
                                 : Colors.grey,
                             fontSize: 12,
@@ -602,7 +652,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                         ? 'Inclus'
                         : '+${_formatPrix(frais)} FCFA',
                     style: TextStyle(
-                      color: selectionne
+                      color:      selectionne
                           ? Colors.white70
                           : const Color(0xFF0D7377),
                       fontWeight: FontWeight.bold,
@@ -618,7 +668,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte récap prix ──────────────────────────────────────────────────────
+  // ─── Carte récap prix ─────────────────────────────────────────────────────
   Widget _cartePrix() {
     if (_calculEnCours) {
       return const Center(child: CircularProgressIndicator());
@@ -652,7 +702,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
       decoration: BoxDecoration(
         color:        const Color(0xFFD1FAE5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF0D7377)),
+        border:       Border.all(color: const Color(0xFF0D7377)),
       ),
       child: Column(
         children: [
@@ -701,7 +751,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte sélection livreur ───────────────────────────────────────────────
+  // ─── Carte sélection livreur ──────────────────────────────────────────────
   Widget _carteLivreurAssigner() {
     return _conteneur(
       titre: '🚴 Assigner un livreur (optionnel)',
@@ -762,7 +812,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                           Text(
                             livreur['telephone'] ?? '',
                             style: TextStyle(
-                              color: selectionne
+                              color:    selectionne
                                   ? Colors.white70
                                   : Colors.grey,
                               fontSize: 12,
@@ -778,7 +828,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Bouton créer commande ─────────────────────────────────────────────────
+  // ─── Bouton créer commande ────────────────────────────────────────────────
   Widget _boutonCreer() {
     return SizedBox(
       width:  double.infinity,
@@ -810,7 +860,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte commande en attente ─────────────────────────────────────────────
+  // ─── Carte commande en attente ────────────────────────────────────────────
   Widget _carteCommandeAttente(Map<String, dynamic> livraison) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -872,8 +922,6 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
               texte:   livraison['adresse_arrivee'] ?? '',
             ),
             const SizedBox(height: 12),
-
-            // Boutons assigner + annuler
             Row(
               children: [
                 Expanded(
@@ -885,9 +933,8 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                         )
                       : DropdownButtonFormField<String>(
                           decoration: InputDecoration(
-                            contentPadding:
-                                const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -898,15 +945,16 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                             style: TextStyle(fontSize: 13),
                           ),
                           items: _livreursDisponibles
-                              .map<DropdownMenuItem<String>>((l) =>
-                                  DropdownMenuItem(
-                                    value: l['_id'],
-                                    child: Text(
-                                      l['nom'],
-                                      style: const TextStyle(
-                                          fontSize: 13),
-                                    ),
-                                  ))
+                              .map<DropdownMenuItem<String>>(
+                                (l) => DropdownMenuItem(
+                                  value: l['_id'],
+                                  child: Text(
+                                    l['nom'],
+                                    style:
+                                        const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              )
                               .toList(),
                           onChanged: (livreurId) {
                             if (livreurId != null) {
@@ -934,7 +982,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Carte commande en cours ───────────────────────────────────────────────
+  // ─── Carte commande en cours ──────────────────────────────────────────────
   Widget _carteCommandeEnCours(Map<String, dynamic> livraison) {
     final statut  = livraison['statut'] as String;
     final couleur = statut == 'en_livraison'
@@ -1003,7 +1051,6 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
               couleur: Colors.red,
               texte:   livraison['adresse_arrivee'] ?? '',
             ),
-            // ✅ Nouveau
             if (livraison['livreur'] is Map) ...[
               const SizedBox(height: 10),
               Row(
@@ -1039,7 +1086,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
     );
   }
 
-  // ── Widgets utilitaires ───────────────────────────────────────────────────
+  // ─── Widgets utilitaires ──────────────────────────────────────────────────
   Widget _conteneur({required String titre, required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1087,11 +1134,11 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
         prefixIcon: Icon(icone, color: couleurIcone, size: 18),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide:   const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide:   const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -1118,10 +1165,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
         Expanded(
           child: Text(
             texte,
-            style: const TextStyle(
-              fontSize: 13,
-              color:    Colors.black87,
-            ),
+            style: const TextStyle(fontSize: 13, color: Colors.black87),
             overflow: TextOverflow.ellipsis,
           ),
         ),

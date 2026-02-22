@@ -6,8 +6,8 @@
 
         <!-- ✅ CLÉ GOOGLE MAPS (BON EMPLACEMENT) -->
         <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyB1kde95FWGwUqCDZ9DhldrwzT-6URhjPI"/>
+    android:name="com.google.android.geo.API_KEY"
+    android:value="${mapsApiKey}"/>
 
         <activity
             android:name=".MainActivity"

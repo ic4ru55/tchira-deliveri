@@ -5,6 +5,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 📚 On lit local.properties pour récupérer la clé Maps
+// sans jamais la mettre dans le code source
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+
 android {
     namespace = "com.tchira.tchira_delivery"
     compileSdk = flutter.compileSdkVersion
@@ -28,6 +39,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // ✅ Injecte la clé comme variable dans le Manifest
+             manifestPlaceholders['mapsApiKey'] =
+        localProperties.getProperty('MAPS_API_KEY', '')
     }
 
     buildTypes {
