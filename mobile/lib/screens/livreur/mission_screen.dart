@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../../providers/livraison_provider.dart';
 import '../../services/socket_service.dart';
@@ -12,61 +15,134 @@ class MissionScreen extends StatefulWidget {
 }
 
 class _MissionScreenState extends State<MissionScreen> {
-  bool _envoiPosition = false;
+  bool                       _envoiPosition = false;
+  StreamSubscription<Position>? _gpsStream;
+
+  @override
+  void dispose() {
+    // ✅ Toujours annuler le stream GPS quand on quitte l'écran
+    // sinon il continue de tourner en arrière-plan et vide la batterie
+    _gpsStream?.cancel();
+    super.dispose();
+  }
 
   Future<void> _demarrerEnvoiPosition() async {
-    final provider  = context.read<LivraisonProvider>();
-    final livraison = provider.livraisonActive;
-    if (livraison == null) return;
+  // ✅ Capturer AVANT tout await
+  final provider  = context.read<LivraisonProvider>();
+  final livraison = provider.livraisonActive;
+  if (livraison == null) return;
 
-    setState(() => _envoiPosition = true);
-
-    final positions = [
-      {'lat': 11.1771, 'lng': -4.2979},
-      {'lat': 11.1780, 'lng': -4.2960},
-      {'lat': 11.1795, 'lng': -4.2945},
-      {'lat': 11.1810, 'lng': -4.2930},
-    ];
-
-    for (final pos in positions) {
-      if (!mounted) break;
-      SocketService.envoyerPosition(
-        livraisonId: livraison.id,
-        lat:         pos['lat']!,
-        lng:         pos['lng']!,
-      );
-      await Future.delayed(const Duration(seconds: 5));
+  LocationPermission permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied) {
+      // ✅ mounted check puis utilisation du context
+      if (!mounted) return;
+      _snack('Permission GPS refusée', Colors.red);
+      return;
     }
+  }
+  if (permission == LocationPermission.deniedForever) {
+    if (!mounted) return;
+    _snack('GPS bloqué — active-le dans les paramètres', Colors.red);
+    return;
+  }
+
+  if (!mounted) return;
+  setState(() => _envoiPosition = true);
+
+  if (kIsWeb) {
+    _demarrerGpsWeb(livraison.id);
+    return;
+  }
+
+  const settings = LocationSettings(
+    accuracy:       LocationAccuracy.high,
+    distanceFilter: 10,
+  );
+
+  _gpsStream = Geolocator.getPositionStream(
+    locationSettings: settings,
+  ).listen((Position position) {
+    if (!mounted) return;
+    SocketService.envoyerPosition(
+      livraisonId: livraison.id,
+      lat:         position.latitude,
+      lng:         position.longitude,
+    );
+  });
+}
+
+  // ── GPS Web : Timer toutes les 10s ────────────────────────────────────────
+  // Sur Chrome, getPositionStream n'est pas fiable.
+  // On récupère manuellement la position toutes les 10 secondes.
+  Timer? _timerWeb;
+
+  void _demarrerGpsWeb(String livraisonId) {
+    _timerWeb = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) async {
+        if (!mounted) {
+          _timerWeb?.cancel();
+          return;
+        }
+        try {
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+            ),
+          );
+          SocketService.envoyerPosition(
+            livraisonId: livraisonId,
+            lat:         position.latitude,
+            lng:         position.longitude,
+          );
+        } catch (_) {
+          // Silencieux — si le GPS échoue on réessaie au prochain tick
+        }
+      },
+    );
+  }
+
+  Future<void> _arreterEnvoiPosition() async {
+    _gpsStream?.cancel();
+    _timerWeb?.cancel();
+    _gpsStream = null;
+    _timerWeb  = null;
+    setState(() => _envoiPosition = false);
   }
 
   Future<void> _changerStatut(String statut) async {
-    final provider  = context.read<LivraisonProvider>();
-    final livraison = provider.livraisonActive;
-    if (livraison == null) return;
+  // ✅ Capturer provider ET navigator AVANT tout await
+  final provider  = context.read<LivraisonProvider>();
+  final navigator = Navigator.of(context);
+  final livraison = provider.livraisonActive;
+  if (livraison == null) return;
 
-    final succes = await provider.mettreAJourStatut(livraison.id, statut);
+  final succes = await provider.mettreAJourStatut(livraison.id, statut);
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    if (succes) {
-      _snack(
-        statut == 'en_livraison'
-            ? '🚚 Livraison démarrée !'
-            : '✅ Livraison terminée !',
-        Colors.green,
+  if (succes) {
+    _snack(
+      statut == 'en_livraison'
+          ? '🚚 Livraison démarrée !'
+          : '✅ Livraison terminée !',
+      Colors.green,
+    );
+
+    if (statut == 'livre') {
+      await _arreterEnvoiPosition();
+      provider.reinitialiserLivraisonActive();
+      // ✅ On utilise navigator capturé avant l'await
+      navigator.pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeLibreur()),
       );
-
-      if (statut == 'livre') {
-        provider.reinitialiserLivraisonActive();
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeLibreur()),
-        );
-      }
-    } else {
-      _snack('❌ Erreur mise à jour statut', Colors.red);
     }
+  } else {
+    _snack('❌ Erreur mise à jour statut', Colors.red);
   }
+}
 
   void _snack(String msg, Color couleur) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -128,7 +204,6 @@ class _MissionScreenState extends State<MissionScreen> {
             _carteStatut(livraison.statut),
             const SizedBox(height: 16),
 
-            // ── Infos client ─────────────────────────────────────────
             _conteneur(
               titre: '👤 Client',
               child: Row(
@@ -167,7 +242,6 @@ class _MissionScreenState extends State<MissionScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ── Détails livraison ────────────────────────────────────
             _conteneur(
               titre: '📦 Détails de la livraison',
               child: Column(
@@ -202,10 +276,7 @@ class _MissionScreenState extends State<MissionScreen> {
                     children: [
                       const Text(
                         'Rémunération',
-                        style: TextStyle(
-                          color:    Colors.grey,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.grey, fontSize: 14),
                       ),
                       Text(
                         '${_formatPrix(livraison.prix)} FCFA',
@@ -227,46 +298,94 @@ class _MissionScreenState extends State<MissionScreen> {
               titre: '📍 Partage de position',
               child: Column(
                 children: [
-                  Text(
-                    _envoiPosition
-                        ? 'Position en cours de partage avec le client...'
-                        : 'Partagez votre position pour que le client puisse vous suivre.',
-                    style: const TextStyle(
-                      color:    Colors.grey,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width:  double.infinity,
-                    height: 46,
-                    child: ElevatedButton.icon(
-                      onPressed: _envoiPosition
-                          ? null
-                          : _demarrerEnvoiPosition,
-                      icon: _envoiPosition
-                          ? const SizedBox(
-                              width:  18,
-                              height: 18,
-                              child:  CircularProgressIndicator(
-                                color:       Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Icon(Icons.my_location, size: 18),
-                      label: Text(
-                        _envoiPosition
-                            ? 'Position en cours...'
-                            : 'Démarrer le partage GPS',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  // ✅ Indicateur visuel de l'état du GPS
+                  Row(
+                    children: [
+                      Container(
+                        width:  10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _envoiPosition
+                              ? Colors.green
+                              : Colors.grey.shade300,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _envoiPosition
+                              ? 'Position GPS en cours de partage avec le client'
+                              : 'Partagez votre position pour que le client puisse vous suivre',
+                          style: TextStyle(
+                            color:    _envoiPosition
+                                ? Colors.green
+                                : Colors.grey,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      // Bouton démarrer
+                      Expanded(
+                        child: SizedBox(
+                          height: 46,
+                          child: ElevatedButton.icon(
+                            onPressed: _envoiPosition
+                                ? null
+                                : _demarrerEnvoiPosition,
+                            icon: _envoiPosition
+                                ? const SizedBox(
+                                    width:  16,
+                                    height: 16,
+                                    child:  CircularProgressIndicator(
+                                      color:       Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.my_location, size: 18),
+                            label: Text(
+                              _envoiPosition
+                                  ? 'GPS actif'
+                                  : 'Démarrer GPS',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // ✅ Bouton arrêter — nouveau
+                      if (_envoiPosition) ...[
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          height: 46,
+                          child: OutlinedButton.icon(
+                            onPressed: _arreterEnvoiPosition,
+                            icon: const Icon(
+                              Icons.stop_circle_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Arrêter'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -281,7 +400,6 @@ class _MissionScreenState extends State<MissionScreen> {
     );
   }
 
-  // ── Carte statut ──────────────────────────────────────────────────────────
   Widget _carteStatut(String statut) {
     final couleur = _couleurStatut(statut);
     final label   = _labelStatut(statut);
@@ -320,7 +438,6 @@ class _MissionScreenState extends State<MissionScreen> {
     );
   }
 
-  // ── Boutons d'action ──────────────────────────────────────────────────────
   Widget _boutonsAction(String statut) {
     if (statut == 'en_cours') {
       return SizedBox(
@@ -331,10 +448,7 @@ class _MissionScreenState extends State<MissionScreen> {
           icon:  const Icon(Icons.local_shipping, size: 20),
           label: const Text(
             'Démarrer la livraison',
-            style: TextStyle(
-              fontSize:   16,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.purple,
@@ -356,10 +470,7 @@ class _MissionScreenState extends State<MissionScreen> {
           icon:  const Icon(Icons.check_circle, size: 20),
           label: const Text(
             'Confirmer la livraison',
-            style: TextStyle(
-              fontSize:   16,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF16A34A),
@@ -375,7 +486,6 @@ class _MissionScreenState extends State<MissionScreen> {
     return const SizedBox.shrink();
   }
 
-  // ── Widgets utilitaires ───────────────────────────────────────────────────
   Widget _conteneur({required String titre, required Widget child}) {
     return Container(
       width:   double.infinity,
@@ -426,17 +536,11 @@ class _MissionScreenState extends State<MissionScreen> {
             children: [
               Text(
                 label,
-                style: const TextStyle(
-                  color:    Colors.grey,
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: Colors.grey, fontSize: 11),
               ),
               Text(
                 valeur,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color:    Colors.black87,
-                ),
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
               ),
             ],
           ),
@@ -445,7 +549,6 @@ class _MissionScreenState extends State<MissionScreen> {
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   String _formatPrix(dynamic montant) {
     final val = (montant as num).toInt();
     return val.toString().replaceAllMapped(

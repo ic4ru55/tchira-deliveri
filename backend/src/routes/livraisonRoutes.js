@@ -1,30 +1,91 @@
-const express    = require('express');
-const router     = express.Router();
+const express = require('express');
+const router  = express.Router();
 const {
   creerLivraison,
   getLivraisonsDisponibles,
+  toutesLesLivraisons,
+  getStats,
   mesLivraisons,
   getLivraison,
   accepterLivraison,
+  assignerLivreur,
   mettreAJourStatut,
+  modifierLivraison,
   annulerLivraison,
+  getLivreursDisponibles,
 } = require('../controllers/livraisonController');
 const { proteger, autoriser } = require('../middleware/auth');
 
-// Toutes les routes nécessitent un token — on met proteger une fois pour toutes
-router.use(proteger);
+// ── Routes spécifiques — AVANT /:id ──────────────────────────────────────────
+router.get('/mes',
+  proteger,
+  autoriser('client'),
+  mesLivraisons
+);
 
-// Routes client
-router.post('/',        autoriser('client'),          creerLivraison);
-router.get('/mes',      autoriser('client'),           mesLivraisons);
-router.delete('/:id',   autoriser('client'),           annulerLivraison);
+router.get('/toutes',
+  proteger,
+  autoriser('admin', 'receptionniste'),
+  toutesLesLivraisons
+);
 
-// Routes livreur
-router.get('/',         autoriser('livreur', 'admin'), getLivraisonsDisponibles);
-router.put('/:id/accepter', autoriser('livreur'),      accepterLivraison);
-router.put('/:id/statut',   autoriser('livreur'),      mettreAJourStatut);
+router.get('/stats',
+  proteger,
+  autoriser('admin'),
+  getStats
+);
 
-// Route commune (client + livreur + admin)
-router.get('/:id',      getLivraison);
+router.get('/livreurs-disponibles',
+  proteger,
+  autoriser('admin', 'receptionniste'),
+  getLivreursDisponibles
+);
+
+// ── CRUD principal ────────────────────────────────────────────────────────────
+router.post('/',
+  proteger,
+  autoriser('client', 'receptionniste'),
+  creerLivraison
+);
+
+router.get('/',
+  proteger,
+  autoriser('livreur'),
+  getLivraisonsDisponibles
+);
+
+router.get('/:id',
+  proteger,
+  getLivraison
+);
+
+router.put('/:id/accepter',
+  proteger,
+  autoriser('livreur'),
+  accepterLivraison
+);
+
+router.put('/:id/assigner',
+  proteger,
+  autoriser('admin', 'receptionniste'),
+  assignerLivreur
+);
+
+router.put('/:id/statut',
+  proteger,
+  autoriser('livreur'),
+  mettreAJourStatut
+);
+
+router.put('/:id/modifier',
+  proteger,
+  autoriser('admin', 'receptionniste'),
+  modifierLivraison
+);
+
+router.delete('/:id',
+  proteger,
+  annulerLivraison
+);
 
 module.exports = router;

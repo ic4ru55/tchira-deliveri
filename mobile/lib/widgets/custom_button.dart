@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 class CustomButton extends StatelessWidget {
-  final String texte;
+  final String        texte;
   final VoidCallback? onPressed;
-  final bool isLoading;
-  final Color? couleur;
-  final IconData? icone;
+  final bool          isLoading;
+  final Color?        couleur;
+  final IconData?     icone;
 
   const CustomButton({
     super.key,
@@ -19,13 +19,12 @@ class CustomButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: double.infinity,  // bouton pleine largeur
+      width:  double.infinity,
       height: 52,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
-        // null désactive le bouton — évite les double-clics pendant le loading
         style: ElevatedButton.styleFrom(
-          backgroundColor: couleur ?? const Color(0xFF2563EB),
+          backgroundColor: couleur ?? const Color(0xFF0D7377),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -34,10 +33,10 @@ class CustomButton extends StatelessWidget {
         ),
         child: isLoading
             ? const SizedBox(
-                width: 24,
+                width:  24,
                 height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
+                child:  CircularProgressIndicator(
+                  color:       Colors.white,
                   strokeWidth: 2,
                 ),
               )
@@ -51,7 +50,7 @@ class CustomButton extends StatelessWidget {
                   Text(
                     texte,
                     style: const TextStyle(
-                      fontSize: 16,
+                      fontSize:   16,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

@@ -20,23 +20,27 @@ exports.getTarifs = async (req, res) => {
 // ── PUT modifier un tarif (admin seulement) ───────────────────────────────────
 exports.modifierTarif = async (req, res) => {
   try {
-    const { categorie }           = req.params;
-    const { prix_base, sur_devis } = req.body;
+    const { categorie } = req.params;
+    const { prix_base, sur_devis, label } = req.body;
 
     const tarif = await Tarif.findOneAndUpdate(
       { categorie },
-      { prix_base, sur_devis },
-      { new: true } // retourne le document mis à jour
+      { 
+        ...(prix_base  !== undefined && { prix_base }),
+        ...(sur_devis  !== undefined && { sur_devis }),
+        ...(label      !== undefined && { label }),
+      },
+      { new: true }
     );
 
     if (!tarif) {
       return res.status(404).json({
         success: false,
-        message: 'Tarif introuvable',
+        message: 'Tarif non trouvé',
       });
     }
 
-    res.status(200).json({ success: true, tarif });
+    res.json({ success: true, tarif });
 
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -46,23 +50,27 @@ exports.modifierTarif = async (req, res) => {
 // ── PUT modifier une zone (admin seulement) ───────────────────────────────────
 exports.modifierZone = async (req, res) => {
   try {
-    const { code }                  = req.params;
-    const { frais_supplementaires } = req.body;
+    const { code } = req.params;
+    const { frais_supplementaires, nom, description } = req.body;
 
     const zone = await Zone.findOneAndUpdate(
       { code },
-      { frais_supplementaires },
+      {
+        ...(frais_supplementaires !== undefined && { frais_supplementaires }),
+        ...(nom                   !== undefined && { nom }),
+        ...(description           !== undefined && { description }),
+      },
       { new: true }
     );
 
     if (!zone) {
       return res.status(404).json({
         success: false,
-        message: 'Zone introuvable',
+        message: 'Zone non trouvée',
       });
     }
 
-    res.status(200).json({ success: true, zone });
+    res.json({ success: true, zone });
 
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -106,7 +114,6 @@ exports.calculerPrix = async (req, res) => {
       prix_base:   tarif.prix_base,
       frais_zone:  zone.frais_supplementaires,
       prix_total,
-      // Détail lisible pour l'affichage
       detail: `${tarif.label} + ${zone.nom} = ${prix_total} FCFA`,
     });
 

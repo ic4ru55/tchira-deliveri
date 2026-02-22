@@ -53,6 +53,16 @@ const DeliverySchema = new mongoose.Schema(
       default: '',
       trim:    true,
     },
+    // Pour les commandes passées par téléphone via réceptionniste
+      client_nom_tel: {
+        type:    String,
+        default: '',
+      },
+
+      client_telephone_tel: {
+        type:    String,
+        default: '',
+      },
 
     statut: {
       type:    String,

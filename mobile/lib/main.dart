@@ -5,11 +5,11 @@ import 'providers/livraison_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/client/home_client.dart';
 import 'screens/livreur/home_livreur.dart';
+import 'screens/receptionniste/home_receptionniste.dart';
+import 'screens/admin/home_admin.dart';
 
 void main() {
   runApp(
-    // MultiProvider — on enregistre tous nos providers ici
-    // Ils seront disponibles partout dans l'app
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
@@ -26,11 +26,11 @@ class TchiraApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Tchira Delivery',
-      debugShowCheckedModeBanner: false, // retire le bandeau "DEBUG"
+      title: 'Tchira Express',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB), // bleu Tchira
+          seedColor: const Color(0xFF0D7377), // vert teal Tchira
         ),
         useMaterial3: true,
         fontFamily: 'Roboto',
@@ -40,7 +40,6 @@ class TchiraApp extends StatelessWidget {
   }
 }
 
-// ─── Écran de démarrage — vérifie si l'user est déjà connecté ────────────────
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -56,18 +55,14 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _verifierSession() async {
-    // Attendre que le widget soit construit avant d'accéder au context
-    await Future.delayed(const Duration(seconds: 1));
-
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
-    final auth = context.read<AuthProvider>();
 
-    // Essayer de restaurer une session existante
+    final auth = context.read<AuthProvider>();
     await auth.restaurerSession();
 
     if (!mounted) return;
 
-    // Rediriger selon l'état
     if (auth.estConnecte) {
       _naviguerVersHome(auth);
     } else {
@@ -78,37 +73,86 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  void _naviguerVersHome(AuthProvider auth) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => auth.estClient
-            ? const HomeClient()
-            : const HomeLibreur(),
-      ),
-    );
+ void _naviguerVersHome(AuthProvider auth) {
+  Widget ecran;
+
+  if (auth.estClient) {
+    ecran = const HomeClient();
+  } else if (auth.estLivreur) {
+    ecran = const HomeLibreur();
+  } else if (auth.estReceptionniste) {
+    ecran = const HomeReceptionniste();
+  } else if (auth.estAdmin) {
+    ecran = const HomeAdmin();
+  } else {
+    ecran = const LoginScreen();
   }
+
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(builder: (_) => ecran),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF1B3A6B),
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D7377),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.delivery_dining, size: 80, color: Colors.white),
-            SizedBox(height: 16),
-            Text(
-              'Tchira Delivery',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+
+            // ── Logo ────────────────────────────────────────────────
+            Container(
+              width:  140,
+              height: 140,
+              decoration: BoxDecoration(
+                color:        Colors.white,
+                borderRadius: BorderRadius.circular(70),
+                boxShadow: [
+                  BoxShadow(
+                    color:      Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 20,
+                    offset:     const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(70),
+                child: Image.asset(
+                  'assets/images/logo.jpg',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
-            SizedBox(height: 32),
-            CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 24),
+
+            // ── Nom ─────────────────────────────────────────────────
+            const Text(
+              'Tchira Express',
+              style: TextStyle(
+                color:      Colors.white,
+                fontSize:   32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Livraison rapide à Bobo-Dioulasso',
+              style: TextStyle(
+                color:    Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 40),
+
+            // ── Spinner ──────────────────────────────────────────────
+            const CircularProgressIndicator(
+              color:       Colors.white,
+              strokeWidth: 2,
+            ),
           ],
         ),
       ),

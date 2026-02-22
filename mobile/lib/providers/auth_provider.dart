@@ -5,25 +5,25 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  // ─── État interne ────────────────────────────────────────────────────────────
-  User? _user;           // l'utilisateur connecté (null si pas connecté)
-  String? _token;        // le token JWT
-  bool _isLoading = false; // true pendant une requête en cours
-  String? _erreur;       // message d'erreur à afficher
+  User?   _user;
+  String? _token;
+  bool    _isLoading = false;
+  String? _erreur;
 
-  // ─── Getters — lecture depuis l'extérieur ────────────────────────────────────
   User?   get user      => _user;
   String? get token     => _token;
   bool    get isLoading => _isLoading;
   String? get erreur    => _erreur;
-  bool    get estConnecte => _user != null;
-  bool    get estClient   => _user?.role == 'client';
-  bool    get estLivreur  => _user?.role == 'livreur';
 
-  // ─── Changer l'état et notifier tous les widgets ─────────────────────────────
+  bool get estConnecte       => _user != null;
+  bool get estClient         => _user?.role == 'client';
+  bool get estLivreur        => _user?.role == 'livreur';
+  bool get estReceptionniste => _user?.role == 'receptionniste';
+  bool get estAdmin          => _user?.role == 'admin';
+
   void _setLoading(bool val) {
     _isLoading = val;
-    notifyListeners(); // 🔔 dit à Flutter "mets à jour l'UI"
+    notifyListeners();
   }
 
   void _setErreur(String? msg) {
@@ -31,7 +31,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── REGISTER ────────────────────────────────────────────────────────────────
+  // ─── REGISTER ────────────────────────────────────────────────────────────
   Future<bool> register({
     required String nom,
     required String email,
@@ -53,22 +53,20 @@ class AuthProvider extends ChangeNotifier {
 
       if (reponse['success'] == true) {
         await _sauvegarderSession(reponse);
-        return true;  // ✅ succès
+        return true;
       } else {
         _setErreur(reponse['message'] ?? 'Erreur inscription');
-        return false; // ❌ échec
+        return false;
       }
     } catch (e) {
       _setErreur('Erreur réseau. Vérifie ta connexion.');
       return false;
     } finally {
       _setLoading(false);
-      // finally s'exécute TOUJOURS — succès ou échec
-      // garantit que le loading s'arrête dans tous les cas
     }
   }
 
-  // ─── LOGIN ───────────────────────────────────────────────────────────────────
+  // ─── LOGIN ────────────────────────────────────────────────────────────────
   Future<bool> login({
     required String email,
     required String motDePasse,
@@ -97,33 +95,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // ─── Sauvegarder la session après login/register ─────────────────────────────
+  // ─── Sauvegarder la session ───────────────────────────────────────────────
   Future<void> _sauvegarderSession(Map<String, dynamic> reponse) async {
     _token = reponse['token'];
     _user  = User.fromJson(reponse['user']);
 
-    // Stocker le token sur le téléphone pour rester connecté
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('token', _token!);
+    await prefs.setString('token',  _token!);
     await prefs.setString('userId', _user!.id);
     await prefs.setString('role',   _user!.role);
 
-    // Connecter Socket.io avec le nouveau token
     SocketService.connecter(_token!);
-
     notifyListeners();
   }
 
-  // ─── Restaurer la session au démarrage de l'app ──────────────────────────────
+  // ─── Restaurer la session au démarrage ───────────────────────────────────
   Future<void> restaurerSession() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
 
-    if (token == null) return; // pas de session sauvegardée
+    if (token == null) return;
 
     _token = token;
 
-    // Récupérer les infos du profil depuis l'API
     try {
       final reponse = await ApiService.moi();
       if (reponse['success'] == true) {
@@ -131,7 +125,6 @@ class AuthProvider extends ChangeNotifier {
         SocketService.connecter(_token!);
         notifyListeners();
       } else {
-        // Token expiré → déconnecter
         await deconnecter();
       }
     } catch (e) {
@@ -139,13 +132,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // ─── DÉCONNEXION ─────────────────────────────────────────────────────────────
+  // ─── DÉCONNEXION ─────────────────────────────────────────────────────────
   Future<void> deconnecter() async {
     _user  = null;
     _token = null;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // efface toutes les données locales
+    await prefs.clear();
 
     SocketService.deconnecter();
     notifyListeners();

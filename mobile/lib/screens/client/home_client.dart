@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +23,7 @@ class _HomeClientState extends State<HomeClient> {
   final _arriveeCtrl = TextEditingController();
   final _descCtrl    = TextEditingController();
 
+  Timer?        _timer;
   bool          _formVisible           = false;
   bool          _chargementTarifs      = true;
   bool          _gpsEnCours            = false;
@@ -44,11 +46,20 @@ class _HomeClientState extends State<HomeClient> {
     _chargerTarifs();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LivraisonProvider>().chargerMesLivraisons();
+
+      // ✅ Rafraîchissement automatique toutes les 5 secondes
+      _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted) {
+          context.read<LivraisonProvider>().chargerMesLivraisons();
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    // ✅ Annuler le timer quand on quitte l'écran
+    _timer?.cancel();
     _departCtrl.dispose();
     _arriveeCtrl.dispose();
     _descCtrl.dispose();
@@ -124,7 +135,6 @@ class _HomeClientState extends State<HomeClient> {
         ),
       );
 
-      // Sur Chrome → afficher les coordonnées directement
       if (kIsWeb) {
         final adresse =
             '${position.latitude.toStringAsFixed(5)}, '
@@ -134,7 +144,6 @@ class _HomeClientState extends State<HomeClient> {
         return;
       }
 
-      // Sur mobile → convertir en adresse lisible
       final placemarks = await placemarkFromCoordinates(
         position.latitude,
         position.longitude,
@@ -219,6 +228,7 @@ class _HomeClientState extends State<HomeClient> {
 
   // ─── Déconnecter ─────────────────────────────────────────────────────────
   Future<void> _deconnecter() async {
+    _timer?.cancel();
     await context.read<AuthProvider>().deconnecter();
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -243,13 +253,13 @@ class _HomeClientState extends State<HomeClient> {
       backgroundColor: const Color(0xFFF8FAFC),
 
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1B3A6B),
+        backgroundColor: const Color(0xFF0D7377),
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Tchira Delivery',
+              'Tchira Express',
               style: TextStyle(
                 color:      Colors.white,
                 fontSize:   16,
@@ -273,12 +283,12 @@ class _HomeClientState extends State<HomeClient> {
       body: Column(
         children: [
 
-          // ── Bannière ────────────────────────────────────────────────────
+          // ── Bannière ──────────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
             decoration: const BoxDecoration(
-              color: Color(0xFF1B3A6B),
+              color: Color(0xFF0D7377),
               borderRadius: BorderRadius.only(
                 bottomLeft:  Radius.circular(28),
                 bottomRight: Radius.circular(28),
@@ -312,7 +322,7 @@ class _HomeClientState extends State<HomeClient> {
                     _formVisible ? 'Annuler' : 'Nouvelle livraison',
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
+                    backgroundColor: const Color(0xFFF97316),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -323,7 +333,7 @@ class _HomeClientState extends State<HomeClient> {
             ),
           ),
 
-          // ── Formulaire ──────────────────────────────────────────────────
+          // ── Formulaire ────────────────────────────────────────────────
           if (_formVisible)
             Expanded(
               child: SingleChildScrollView(
@@ -345,7 +355,7 @@ class _HomeClientState extends State<HomeClient> {
               ),
             ),
 
-          // ── Liste livraisons ────────────────────────────────────────────
+          // ── Liste livraisons ──────────────────────────────────────────
           if (!_formVisible)
             Expanded(
               child: Padding(
@@ -353,15 +363,42 @@ class _HomeClientState extends State<HomeClient> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Mes livraisons',
-                        style: TextStyle(
-                          fontSize:   16,
-                          fontWeight: FontWeight.bold,
-                          color:      Color(0xFF1B3A6B),
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Mes livraisons',
+                            style: TextStyle(
+                              fontSize:   16,
+                              fontWeight: FontWeight.bold,
+                              color:      Color(0xFF0D7377),
+                            ),
+                          ),
+                          // ✅ Indicateur de rafraîchissement auto
+                          Row(
+                            children: [
+                              Container(
+                                width:  8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'Live',
+                                style: TextStyle(
+                                  color:    Colors.green,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     if (provider.isLoading &&
@@ -409,7 +446,7 @@ class _HomeClientState extends State<HomeClient> {
                 height: 54,
                 width:  54,
                 decoration: BoxDecoration(
-                  color:        const Color(0xFF2563EB),
+                  color:        const Color(0xFF0D7377),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: _gpsEnCours
@@ -471,11 +508,11 @@ class _HomeClientState extends State<HomeClient> {
               _calculerPrix();
             },
             child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
+              margin:  const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: selectionne
-                    ? const Color(0xFF2563EB)
+                    ? const Color(0xFF0D7377)
                     : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -506,7 +543,7 @@ class _HomeClientState extends State<HomeClient> {
                     style: TextStyle(
                       color: selectionne
                           ? Colors.white70
-                          : const Color(0xFF2563EB),
+                          : const Color(0xFF0D7377),
                       fontWeight: FontWeight.bold,
                       fontSize:   13,
                     ),
@@ -537,11 +574,11 @@ class _HomeClientState extends State<HomeClient> {
               _calculerPrix();
             },
             child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
+              margin:  const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: selectionne
-                    ? const Color(0xFF1B3A6B)
+                    ? const Color(0xFF0D7377)
                     : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -586,7 +623,7 @@ class _HomeClientState extends State<HomeClient> {
                     style: TextStyle(
                       color: selectionne
                           ? Colors.white70
-                          : const Color(0xFF2563EB),
+                          : const Color(0xFF0D7377),
                       fontWeight: FontWeight.bold,
                       fontSize:   13,
                     ),
@@ -632,15 +669,15 @@ class _HomeClientState extends State<HomeClient> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color:        const Color(0xFFDBEAFE),
+        color:        const Color(0xFFD1FAE5),
         borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: const Color(0xFF2563EB)),
+        border:       Border.all(color: const Color(0xFF0D7377)),
       ),
       child: Column(
         children: [
           _lignePrix('Prix de base',  _prixBase  ?? 0),
           _lignePrix('Frais de zone', _fraisZone ?? 0),
-          const Divider(color: Color(0xFF2563EB)),
+          const Divider(color: Color(0xFF0D7377)),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -649,7 +686,7 @@ class _HomeClientState extends State<HomeClient> {
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize:   16,
-                  color:      Color(0xFF1B3A6B),
+                  color:      Color(0xFF0D7377),
                 ),
               ),
               Text(
@@ -657,7 +694,7 @@ class _HomeClientState extends State<HomeClient> {
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize:   18,
-                  color:      Color(0xFF1B3A6B),
+                  color:      Color(0xFF0D7377),
                 ),
               ),
             ],
@@ -676,7 +713,7 @@ class _HomeClientState extends State<HomeClient> {
           Text(label, style: const TextStyle(color: Colors.grey)),
           Text(
             '${_formatPrix(montant)} FCFA',
-            style: const TextStyle(color: Color(0xFF1B3A6B)),
+            style: const TextStyle(color: Color(0xFF0D7377)),
           ),
         ],
       ),
@@ -705,7 +742,7 @@ class _HomeClientState extends State<HomeClient> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF2563EB),
+          backgroundColor: const Color(0xFF0D7377),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -762,7 +799,7 @@ class _HomeClientState extends State<HomeClient> {
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize:   16,
-                    color:      Color(0xFF1B3A6B),
+                    color:      Color(0xFF0D7377),
                   ),
                 ),
               ],
@@ -805,8 +842,8 @@ class _HomeClientState extends State<HomeClient> {
                   icon:  const Icon(Icons.map_outlined, size: 16),
                   label: const Text('Suivre le livreur'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF2563EB),
-                    side: const BorderSide(color: Color(0xFF2563EB)),
+                    foregroundColor: const Color(0xFF0D7377),
+                    side: const BorderSide(color: Color(0xFF0D7377)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -843,7 +880,7 @@ class _HomeClientState extends State<HomeClient> {
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize:   15,
-              color:      Color(0xFF1B3A6B),
+              color:      Color(0xFF0D7377),
             ),
           ),
           const SizedBox(height: 14),
@@ -868,16 +905,18 @@ class _HomeClientState extends State<HomeClient> {
         prefixIcon: Icon(icone, color: couleurIcone, size: 18),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide:
+              const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide:
+              const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide:
-              const BorderSide(color: Color(0xFF2563EB), width: 2),
+          borderSide: const BorderSide(
+              color: Color(0xFF0D7377), width: 2),
         ),
         filled:         true,
         fillColor:      const Color(0xFFF8FAFC),
@@ -899,7 +938,8 @@ class _HomeClientState extends State<HomeClient> {
         Expanded(
           child: Text(
             texte,
-            style: const TextStyle(fontSize: 13, color: Colors.black87),
+            style: const TextStyle(
+                fontSize: 13, color: Colors.black87),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -940,7 +980,7 @@ class _HomeClientState extends State<HomeClient> {
   Color _couleurStatut(String statut) {
     switch (statut) {
       case 'en_attente':   return Colors.orange;
-      case 'en_cours':     return const Color(0xFF2563EB);
+      case 'en_cours':     return const Color(0xFF0D7377);
       case 'en_livraison': return Colors.purple;
       case 'livre':        return Colors.green;
       case 'annule':       return Colors.red;

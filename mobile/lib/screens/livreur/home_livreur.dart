@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -14,15 +15,32 @@ class HomeLibreur extends StatefulWidget {
 }
 
 class _HomeLibreurState extends State<HomeLibreur> {
+  Timer? _timer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LivraisonProvider>().chargerLivraisonsDisponibles();
+
+      // ✅ Rafraîchissement automatique toutes les 5 secondes
+      _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted) {
+          context.read<LivraisonProvider>()
+              .chargerLivraisonsDisponibles(silencieux: true);
+        }
+      });
     });
   }
 
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _deconnecter() async {
+    _timer?.cancel();
     await context.read<AuthProvider>().deconnecter();
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -66,15 +84,14 @@ class _HomeLibreurState extends State<HomeLibreur> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
 
-      // ── AppBar ──────────────────────────────────────────────────────────────
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1B3A6B),
+        backgroundColor: const Color(0xFF0D7377),
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Tchira Delivery',
+              'Tchira Express',
               style: TextStyle(
                 color:      Colors.white,
                 fontSize:   16,
@@ -88,15 +105,41 @@ class _HomeLibreurState extends State<HomeLibreur> {
           ],
         ),
         actions: [
-          // Bouton rafraîchir
+          // ✅ Badge Live
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Center(
+              child: Row(
+                children: [
+                  Container(
+                    width:  8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.greenAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Live',
+                    style: TextStyle(
+                      color:      Colors.greenAccent,
+                      fontSize:   11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           IconButton(
-            icon:     const Icon(Icons.refresh, color: Colors.white),
+            icon:      const Icon(Icons.refresh, color: Colors.white),
             onPressed: provider.isLoading
                 ? null
                 : () => provider.chargerLivraisonsDisponibles(),
           ),
           IconButton(
-            icon:     const Icon(Icons.logout, color: Colors.white),
+            icon:      const Icon(Icons.logout, color: Colors.white),
             onPressed: _deconnecter,
           ),
         ],
@@ -105,12 +148,12 @@ class _HomeLibreurState extends State<HomeLibreur> {
       body: Column(
         children: [
 
-          // ── Bannière stats ──────────────────────────────────────────────────
+          // ── Bannière stats ────────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
             decoration: const BoxDecoration(
-              color: Color(0xFF1B3A6B),
+              color: Color(0xFF0D7377),
               borderRadius: BorderRadius.only(
                 bottomLeft:  Radius.circular(28),
                 bottomRight: Radius.circular(28),
@@ -119,47 +162,53 @@ class _HomeLibreurState extends State<HomeLibreur> {
             child: Row(
               children: [
                 _statCard(
-                  label: 'Missions dispo',
+                  label:  'Missions dispo',
                   valeur: '${provider.livraisonsDisponibles.length}',
                   icone:  Icons.inbox_outlined,
                 ),
                 const SizedBox(width: 12),
                 _statCard(
-                  label:  'Statut',
-                  valeur: 'Disponible',
-                  icone:  Icons.circle,
+                  label:        'Statut',
+                  valeur:       'Disponible',
+                  icone:        Icons.circle,
                   couleurIcone: Colors.greenAccent,
                 ),
               ],
             ),
           ),
 
-          // ── Titre liste ─────────────────────────────────────────────────────
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+          // ── Titre liste ───────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(
-                  Icons.delivery_dining,
-                  color: Color(0xFF1B3A6B),
-                  size: 20,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Livraisons disponibles',
-                  style: TextStyle(
-                    fontSize:   16,
-                    fontWeight: FontWeight.bold,
-                    color:      Color(0xFF1B3A6B),
-                  ),
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.delivery_dining,
+                      color: Color(0xFF0D7377),
+                      size:  20,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Livraisons disponibles',
+                      style: TextStyle(
+                        fontSize:   16,
+                        fontWeight: FontWeight.bold,
+                        color:      Color(0xFF0D7377),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
 
-          // ── Liste ───────────────────────────────────────────────────────────
+          // ── Liste ─────────────────────────────────────────────────────────
           Expanded(
-            child: provider.isLoading
+            child: provider.isLoading &&
+                    provider.livraisonsDisponibles.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : provider.livraisonsDisponibles.isEmpty
                     ? _etatVide()
@@ -171,11 +220,11 @@ class _HomeLibreurState extends State<HomeLibreur> {
                               horizontal: 16),
                           itemCount:
                               provider.livraisonsDisponibles.length,
-                          itemBuilder: (context, index) {
-                            return _carteMission(
-                              provider.livraisonsDisponibles[index],
-                            );
-                          },
+                          itemBuilder: (context, index) =>
+                              _carteMission(
+                            provider.livraisonsDisponibles[index],
+                            provider,
+                          ),
                         ),
                       ),
           ),
@@ -184,8 +233,8 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Carte mission ────────────────────────────────────────────────────────────
-  Widget _carteMission(Livraison livraison) {
+  // ── Carte mission ─────────────────────────────────────────────────────────
+  Widget _carteMission(Livraison livraison, LivraisonProvider provider) {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
@@ -213,11 +262,12 @@ class _HomeLibreurState extends State<HomeLibreur> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color:        const Color(0xFF2563EB),
+                    color:        const Color(0xFF0D7377),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${livraison.prix.toStringAsFixed(2)} €',
+                    // ✅ Prix en FCFA
+                    '${_formatPrix(livraison.prix)} FCFA',
                     style: const TextStyle(
                       color:      Colors.white,
                       fontWeight: FontWeight.bold,
@@ -241,11 +291,11 @@ class _HomeLibreurState extends State<HomeLibreur> {
               children: [
                 const CircleAvatar(
                   radius:          16,
-                  backgroundColor: Color(0xFFDBEAFE),
+                  backgroundColor: Color(0xFFD1FAE5),
                   child: Icon(
                     Icons.person,
-                    color: Color(0xFF2563EB),
-                    size: 18,
+                    color: Color(0xFF0D7377),
+                    size:  18,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -321,7 +371,8 @@ class _HomeLibreurState extends State<HomeLibreur> {
               width:  double.infinity,
               height: 46,
               child: ElevatedButton.icon(
-                onPressed: provider(context).isLoading
+                // ✅ Plus de provider(context) — on utilise le provider passé en paramètre
+                onPressed: provider.isLoading
                     ? null
                     : () => _accepterLivraison(livraison.id),
                 icon:  const Icon(Icons.check_circle_outline, size: 18),
@@ -344,7 +395,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── État vide ────────────────────────────────────────────────────────────────
+  // ── État vide ─────────────────────────────────────────────────────────────
   Widget _etatVide() {
     return Center(
       child: Column(
@@ -365,7 +416,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tire vers le bas pour actualiser',
+            'Mise à jour automatique en cours...',
             style: TextStyle(
               fontSize: 13,
               color:    Colors.grey.shade400,
@@ -376,7 +427,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Carte statistique dans la bannière ───────────────────────────────────────
+  // ── Carte statistique ─────────────────────────────────────────────────────
   Widget _statCard({
     required String   label,
     required String   valeur,
@@ -420,7 +471,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Ligne adresse ────────────────────────────────────────────────────────────
+  // ── Ligne adresse ─────────────────────────────────────────────────────────
   Widget _adresseLigne({
     required IconData icone,
     required Color    couleur,
@@ -459,17 +510,22 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Formatter la date ────────────────────────────────────────────────────────
-  String _formatDate(DateTime date) {
-    final now   = DateTime.now();
-    final diff  = now.difference(date);
-
-    if (diff.inMinutes < 60) return 'Il y a ${diff.inMinutes} min';
-    if (diff.inHours < 24)   return 'Il y a ${diff.inHours}h';
-    return '${date.day}/${date.month}/${date.year}';
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  String _formatPrix(dynamic montant) {
+    if (montant == null) return '0';
+    final val = (montant as num).toInt();
+    return val.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]} ',
+    );
   }
 
-  // ── Accès rapide au provider sans rebuild ────────────────────────────────────
-  LivraisonProvider provider(BuildContext context) =>
-      context.read<LivraisonProvider>();
+  String _formatDate(DateTime date) {
+    final now  = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inMinutes < 60) return 'Il y a ${diff.inMinutes} min';
+    if (diff.inHours   < 24) return 'Il y a ${diff.inHours}h';
+    return '${date.day}/${date.month}/${date.year}';
+  }
 }

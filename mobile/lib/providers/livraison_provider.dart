@@ -4,17 +4,17 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 
 class LivraisonProvider extends ChangeNotifier {
-  List<Livraison> _mesLivraisons          = [];
-  List<Livraison> _livraisonsDisponibles  = [];
+  List<Livraison> _mesLivraisons         = [];
+  List<Livraison> _livraisonsDisponibles = [];
   Livraison?      _livraisonActive;
-  bool            _isLoading = false;
+  bool            _isLoading             = false;
   String?         _erreur;
 
-  List<Livraison> get mesLivraisons          => _mesLivraisons;
-  List<Livraison> get livraisonsDisponibles  => _livraisonsDisponibles;
-  Livraison?      get livraisonActive        => _livraisonActive;
-  bool            get isLoading              => _isLoading;
-  String?         get erreur                 => _erreur;
+  List<Livraison> get mesLivraisons         => _mesLivraisons;
+  List<Livraison> get livraisonsDisponibles => _livraisonsDisponibles;
+  Livraison?      get livraisonActive       => _livraisonActive;
+  bool            get isLoading             => _isLoading;
+  String?         get erreur                => _erreur;
 
   void _setLoading(bool val) {
     _isLoading = val;
@@ -45,8 +45,8 @@ class LivraisonProvider extends ChangeNotifier {
         description:    description,
       );
       if (reponse['success'] == true) {
-        _mesLivraisons.insert(0, Livraison.fromJson(reponse['livraison']));
-        notifyListeners();
+        // Recharger toute la liste pour avoir les données fraîches
+        await chargerMesLivraisons();
         return true;
       }
       _erreur = reponse['message'];
@@ -62,40 +62,80 @@ class LivraisonProvider extends ChangeNotifier {
   }
 
   // ─── CLIENT : charger ses livraisons ─────────────────────────────────────
-  Future<void> chargerMesLivraisons() async {
-    _setLoading(true);
+  // ✅ silencieux = true → pas de spinner lors du refresh auto toutes les 5s
+  Future<void> chargerMesLivraisons({bool silencieux = false}) async {
+    if (!silencieux) _setLoading(true);
     try {
       final reponse = await ApiService.mesLivraisons();
       if (reponse['success'] == true) {
-        _mesLivraisons = (reponse['livraisons'] as List)
+        final nouvelles = (reponse['livraisons'] as List)
             .map((json) => Livraison.fromJson(json))
             .toList();
-        notifyListeners();
+
+        // ✅ Mettre à jour seulement si les données ont changé
+        bool changed = nouvelles.length != _mesLivraisons.length;
+        if (!changed) {
+          for (int i = 0; i < nouvelles.length; i++) {
+            if (nouvelles[i].statut != _mesLivraisons[i].statut ||
+                nouvelles[i].id    != _mesLivraisons[i].id) {
+              changed = true;
+              break;
+            }
+          }
+        }
+
+        if (changed) {
+          _mesLivraisons = nouvelles;
+
+          // ✅ Mettre à jour la livraison active si elle est dans la liste
+          if (_livraisonActive != null) {
+            final updated = _mesLivraisons.where(
+              (l) => l.id == _livraisonActive!.id,
+            );
+            if (updated.isNotEmpty) {
+              _livraisonActive = updated.first;
+            }
+          }
+
+          notifyListeners();
+        }
       }
     } catch (e) {
-      _erreur = 'Erreur chargement livraisons';
-      notifyListeners();
+      // silencieux — pas d'erreur affichée lors du refresh auto
     } finally {
-      _setLoading(false);
+      if (!silencieux) _setLoading(false);
     }
   }
 
   // ─── LIVREUR : charger les livraisons disponibles ────────────────────────
-  Future<void> chargerLivraisonsDisponibles() async {
-    _setLoading(true);
+  Future<void> chargerLivraisonsDisponibles({bool silencieux = false}) async {
+    if (!silencieux) _setLoading(true);
     try {
       final reponse = await ApiService.getLivraisonsDisponibles();
       if (reponse['success'] == true) {
-        _livraisonsDisponibles = (reponse['livraisons'] as List)
+        final nouvelles = (reponse['livraisons'] as List)
             .map((json) => Livraison.fromJson(json))
             .toList();
-        notifyListeners();
+
+        bool changed = nouvelles.length != _livraisonsDisponibles.length;
+        if (!changed) {
+          for (int i = 0; i < nouvelles.length; i++) {
+            if (nouvelles[i].id != _livraisonsDisponibles[i].id) {
+              changed = true;
+              break;
+            }
+          }
+        }
+
+        if (changed) {
+          _livraisonsDisponibles = nouvelles;
+          notifyListeners();
+        }
       }
     } catch (e) {
-      _erreur = 'Erreur chargement';
-      notifyListeners();
+      // silencieux
     } finally {
-      _setLoading(false);
+      if (!silencieux) _setLoading(false);
     }
   }
 
