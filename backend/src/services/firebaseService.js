@@ -1,14 +1,15 @@
 const admin = require('firebase-admin');
-const path  = require('path');
 
 let initialise = false;
 
 const initialiserFirebase = () => {
   if (initialise) return;
   try {
-    const credentials = require(
-      path.join(__dirname, '../../firebase-credentials.json')
-    );
+    // 🔹 Essaie d'abord la variable d'environnement
+    const credentials = process.env.FIREBASE_CREDENTIALS
+      ? JSON.parse(process.env.FIREBASE_CREDENTIALS)
+      : require('../../firebase-credentials.json'); // fallback local pour dev
+
     admin.initializeApp({
       credential: admin.credential.cert(credentials),
     });
@@ -26,17 +27,15 @@ const envoyerNotification = async ({ fcmToken, titre, corps, donnees = {} }) => 
     const message = {
       token: fcmToken,
       notification: { title: titre, body: corps },
-      // 📚 data = données silencieuses reçues par l'app
-      // permet de naviguer vers le bon écran quand l'user tape la notif
       data: Object.fromEntries(
         Object.entries(donnees).map(([k, v]) => [k, String(v)])
       ),
       android: {
         priority: 'high',
         notification: {
-          sound:     'default',
+          sound: 'default',
           channelId: 'tchira_notifications',
-          color:     '#0D7377',
+          color: '#0D7377',
         },
       },
     };
