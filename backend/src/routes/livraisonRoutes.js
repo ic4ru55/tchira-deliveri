@@ -6,6 +6,7 @@ const {
   toutesLesLivraisons,
   getStats,
   mesLivraisons,
+  monHistorique,
   getLivraison,
   accepterLivraison,
   assignerLivreur,
@@ -21,6 +22,13 @@ router.get('/mes',
   proteger,
   autoriser('client'),
   mesLivraisons
+);
+
+// ✅ Historique du livreur connecté
+router.get('/mon-historique',
+  proteger,
+  autoriser('livreur'),
+  monHistorique
 );
 
 router.get('/toutes',

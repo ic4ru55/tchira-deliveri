@@ -6,29 +6,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
 
-  // ─── URLs ──────────────────────────────────────────────────────────────────
-  // 📚 On sépare clairement l'URL de production et de développement
-  // En prod → Railway (accessible depuis n'importe où dans le monde)
-  // En dev  → localhost (ton PC uniquement)
-  //
-  // kIsWeb    → true si l'app tourne dans Chrome
-  // kReleaseMode → true si c'est un build APK de prod (flutter build apk --release)
-  // kDebugMode   → true si tu fais flutter run (développement)
-
-  static const String _urlProd = 'https://celebrated-upliftment-production-00fa.up.railway.app/api';
+  static const String _urlProd      = 'https://celebrated-upliftment-production-00fa.up.railway.app/api';
   static const String _urlDevWeb    = 'http://localhost:5000/api';
   static const String _urlDevMobile = 'http://10.0.2.2:5000/api';
 
   static String get baseUrl {
-    // ✅ En mode release (APK final) → toujours Railway
     if (kReleaseMode) return _urlProd;
-
-    // ✅ En mode debug → localhost selon la plateforme
-    if (kIsWeb) return _urlDevWeb;      // Chrome → localhost direct
-    return _urlDevMobile;               // Émulateur Android → 10.0.2.2
+    if (kIsWeb)       return _urlDevWeb;
+    return _urlDevMobile;
   }
 
-  // ─── Gestion robuste des réponses ─────────────────────────────────────────
   static Map<String, dynamic> _handleResponse(http.Response response) {
     try {
       final data = jsonDecode(response.body);
@@ -44,14 +31,10 @@ class ApiService {
             : 'Erreur serveur (${response.statusCode})',
       };
     } catch (_) {
-      return {
-        'success': false,
-        'message': 'Réponse serveur invalide',
-      };
+      return {'success': false, 'message': 'Réponse serveur invalide'};
     }
   }
 
-  // ─── Token ────────────────────────────────────────────────────────────────
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
@@ -80,11 +63,9 @@ class ApiService {
             Uri.parse('$baseUrl/auth/register'),
             headers: await _headers(withAuth: false),
             body: jsonEncode({
-              'nom':          nom,
-              'email':        email,
+              'nom': nom, 'email': email,
               'mot_de_passe': motDePasse,
-              'telephone':    telephone,
-              'role':         role,
+              'telephone': telephone, 'role': role,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -104,8 +85,7 @@ class ApiService {
             Uri.parse('$baseUrl/auth/login'),
             headers: await _headers(withAuth: false),
             body: jsonEncode({
-              'email':        email,
-              'mot_de_passe': motDePasse,
+              'email': email, 'mot_de_passe': motDePasse,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -118,10 +98,7 @@ class ApiService {
   static Future<Map<String, dynamic>> moi() async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/auth/moi'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse('$baseUrl/auth/moi'), headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -129,14 +106,28 @@ class ApiService {
     }
   }
 
+  // ─── NOTIFICATIONS FCM ────────────────────────────────────────────────────
+  static Future<void> sauvegarderTokenFCM(String fcmToken) async {
+    try {
+      await http
+          .post(
+            Uri.parse('$baseUrl/notifications/token'),
+            headers: await _headers(),
+            body: jsonEncode({'fcm_token': fcmToken}),
+          )
+          .timeout(const Duration(seconds: 10));
+      debugPrint('🔔 Token FCM sauvegardé');
+    } catch (e) {
+      debugPrint('❌ Erreur FCM : $e');
+    }
+  }
+
   // ─── TARIFS ───────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getTarifs() async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/tarifs'),
-            headers: await _headers(withAuth: false),
-          )
+          .get(Uri.parse('$baseUrl/tarifs'),
+              headers: await _headers(withAuth: false))
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -153,10 +144,7 @@ class ApiService {
           .post(
             Uri.parse('$baseUrl/tarifs/calculer'),
             headers: await _headers(),
-            body: jsonEncode({
-              'categorie': categorie,
-              'zone_code': zoneCode,
-            }),
+            body: jsonEncode({'categorie': categorie, 'zone_code': zoneCode}),
           )
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
@@ -175,10 +163,7 @@ class ApiService {
           .put(
             Uri.parse('$baseUrl/tarifs/tarif/$categorie'),
             headers: await _headers(),
-            body: jsonEncode({
-              'prix_base': prixBase,
-              'sur_devis': surDevis,
-            }),
+            body: jsonEncode({'prix_base': prixBase, 'sur_devis': surDevis}),
           )
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
@@ -196,9 +181,7 @@ class ApiService {
           .put(
             Uri.parse('$baseUrl/tarifs/zone/$code'),
             headers: await _headers(),
-            body: jsonEncode({
-              'frais_supplementaires': fraisSupplementaires,
-            }),
+            body: jsonEncode({'frais_supplementaires': fraisSupplementaires}),
           )
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
@@ -244,10 +227,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getLivraisonsDisponibles() async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/livraisons'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse('$baseUrl/livraisons'), headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -258,10 +238,20 @@ class ApiService {
   static Future<Map<String, dynamic>> mesLivraisons() async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/livraisons/mes'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse('$baseUrl/livraisons/mes'), headers: await _headers())
+          .timeout(const Duration(seconds: 15));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+  // ✅ Historique des livraisons du livreur connecté
+  static Future<Map<String, dynamic>> mesLivraisonsLivreur() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/livraisons/mon-historique'),
+              headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -272,10 +262,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getLivraison(String id) async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/livraisons/$id'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse('$baseUrl/livraisons/$id'), headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -286,10 +273,8 @@ class ApiService {
   static Future<Map<String, dynamic>> accepterLivraison(String id) async {
     try {
       final response = await http
-          .put(
-            Uri.parse('$baseUrl/livraisons/$id/accepter'),
-            headers: await _headers(),
-          )
+          .put(Uri.parse('$baseUrl/livraisons/$id/accepter'),
+              headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -316,10 +301,8 @@ class ApiService {
   static Future<Map<String, dynamic>> annulerLivraison(String id) async {
     try {
       final response = await http
-          .delete(
-            Uri.parse('$baseUrl/livraisons/$id'),
-            headers: await _headers(),
-          )
+          .delete(Uri.parse('$baseUrl/livraisons/$id'),
+              headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -331,10 +314,8 @@ class ApiService {
   static Future<Map<String, dynamic>> getLivreursDisponibles() async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/livraisons/livreurs-disponibles'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse('$baseUrl/livraisons/livreurs-disponibles'),
+              headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -431,11 +412,9 @@ class ApiService {
             Uri.parse('$baseUrl/admin/utilisateurs'),
             headers: await _headers(),
             body: jsonEncode({
-              'nom':          nom,
-              'email':        email,
+              'nom': nom, 'email': email,
               'mot_de_passe': motDePasse,
-              'telephone':    telephone,
-              'role':         role,
+              'telephone': telephone, 'role': role,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -467,10 +446,8 @@ class ApiService {
       String userId) async {
     try {
       final response = await http
-          .delete(
-            Uri.parse('$baseUrl/admin/utilisateurs/$userId'),
-            headers: await _headers(),
-          )
+          .delete(Uri.parse('$baseUrl/admin/utilisateurs/$userId'),
+              headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {
@@ -478,13 +455,14 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> getStats() async {
+  // ✅ Stats avec filtre date optionnel — ?date=2026-02-23
+  static Future<Map<String, dynamic>> getStats({String? date}) async {
     try {
+      final url = date != null
+          ? '$baseUrl/livraisons/stats?date=$date'
+          : '$baseUrl/livraisons/stats';
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/livraisons/stats'),
-            headers: await _headers(),
-          )
+          .get(Uri.parse(url), headers: await _headers())
           .timeout(const Duration(seconds: 15));
       return _handleResponse(response);
     } catch (e) {

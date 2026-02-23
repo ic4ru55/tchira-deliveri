@@ -9,6 +9,19 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
+
+                    <!-- Canal de notification Android -->
+            <meta-data
+                android:name="com.google.firebase.messaging.default_notification_channel_id"
+                android:value="tchira_notifications"/>
+            <!-- Icône de notification -->
+            <meta-data
+                android:name="com.google.firebase.messaging.default_notification_icon"
+                android:resource="@mipmap/ic_launcher"/>
+            <meta-data
+                android:name="com.google.firebase.messaging.default_notification_color"
+                android:resource="@color/notification_color"/>
+
         <!-- ✅ CLÉ GOOGLE MAPS (BON EMPLACEMENT) -->
         <meta-data
     android:name="com.google.android.geo.API_KEY"

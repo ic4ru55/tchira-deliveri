@@ -1,3 +1,17 @@
+// ✅ Kotlin DSL
+// classpath() avec guillemets doubles = syntaxe correcte pour .kts
+// classpath '' avec guillemets simples = syntaxe Groovy → ERREUR dans .kts
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
+
 allprojects {
     repositories {
         google()
