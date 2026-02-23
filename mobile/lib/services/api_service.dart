@@ -5,9 +5,27 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
+
+  // ─── URLs ──────────────────────────────────────────────────────────────────
+  // 📚 On sépare clairement l'URL de production et de développement
+  // En prod → Railway (accessible depuis n'importe où dans le monde)
+  // En dev  → localhost (ton PC uniquement)
+  //
+  // kIsWeb    → true si l'app tourne dans Chrome
+  // kReleaseMode → true si c'est un build APK de prod (flutter build apk --release)
+  // kDebugMode   → true si tu fais flutter run (développement)
+
+  static const String _urlProd = 'https://celebrated-upliftment-production-00fa.up.railway.app/api';
+  static const String _urlDevWeb    = 'http://localhost:5000/api';
+  static const String _urlDevMobile = 'http://10.0.2.2:5000/api';
+
   static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:5000/api';
-    return 'http://10.0.2.2:5000/api';
+    // ✅ En mode release (APK final) → toujours Railway
+    if (kReleaseMode) return _urlProd;
+
+    // ✅ En mode debug → localhost selon la plateforme
+    if (kIsWeb) return _urlDevWeb;      // Chrome → localhost direct
+    return _urlDevMobile;               // Émulateur Android → 10.0.2.2
   }
 
   // ─── Gestion robuste des réponses ─────────────────────────────────────────
@@ -138,6 +156,48 @@ class ApiService {
             body: jsonEncode({
               'categorie': categorie,
               'zone_code': zoneCode,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> modifierTarif({
+    required String categorie,
+    required double prixBase,
+    required bool   surDevis,
+  }) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/tarifs/tarif/$categorie'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'prix_base': prixBase,
+              'sur_devis': surDevis,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> modifierZone({
+    required String code,
+    required int    fraisSupplementaires,
+  }) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/tarifs/zone/$code'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'frais_supplementaires': fraisSupplementaires,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -431,45 +491,4 @@ class ApiService {
       return {'success': false, 'message': 'Connexion impossible'};
     }
   }
-  static Future<Map<String, dynamic>> modifierTarif({
-  required String categorie,
-  required double prixBase,
-  required bool   surDevis,
-}) async {
-  try {
-    final response = await http
-        .put(
-          Uri.parse('$baseUrl/tarifs/tarif/$categorie'),
-          headers: await _headers(),
-          body: jsonEncode({
-            'prix_base':  prixBase,
-            'sur_devis':  surDevis,
-          }),
-        )
-        .timeout(const Duration(seconds: 15));
-    return _handleResponse(response);
-  } catch (e) {
-    return {'success': false, 'message': 'Connexion impossible'};
-  }
-}
-
-static Future<Map<String, dynamic>> modifierZone({
-  required String code,
-  required int    fraisSupplementaires,
-}) async {
-  try {
-    final response = await http
-        .put(
-          Uri.parse('$baseUrl/tarifs/zone/$code'),
-          headers: await _headers(),
-          body: jsonEncode({
-            'frais_supplementaires': fraisSupplementaires,
-          }),
-        )
-        .timeout(const Duration(seconds: 15));
-    return _handleResponse(response);
-  } catch (e) {
-    return {'success': false, 'message': 'Connexion impossible'};
-  }
-}
 }

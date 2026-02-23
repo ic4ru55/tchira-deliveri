@@ -46,8 +46,6 @@ class _HomeClientState extends State<HomeClient> {
     _chargerTarifs();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LivraisonProvider>().chargerMesLivraisons();
-
-      // ✅ Rafraîchissement automatique toutes les 5 secondes
       _timer = Timer.periodic(const Duration(seconds: 5), (_) {
         if (mounted) {
           context.read<LivraisonProvider>().chargerMesLivraisons();
@@ -58,7 +56,6 @@ class _HomeClientState extends State<HomeClient> {
 
   @override
   void dispose() {
-    // ✅ Annuler le timer quand on quitte l'écran
     _timer?.cancel();
     _departCtrl.dispose();
     _arriveeCtrl.dispose();
@@ -70,6 +67,7 @@ class _HomeClientState extends State<HomeClient> {
   Future<void> _chargerTarifs() async {
     try {
       final reponse = await ApiService.getTarifs();
+      if (!mounted) return;
       if (reponse['success'] == true) {
         setState(() {
           _tarifs           = reponse['tarifs'];
@@ -78,22 +76,20 @@ class _HomeClientState extends State<HomeClient> {
         });
       }
     } catch (e) {
-      setState(() => _chargementTarifs = false);
+      if (mounted) setState(() => _chargementTarifs = false);
     }
   }
 
   // ─── Calculer le prix ─────────────────────────────────────────────────────
   Future<void> _calculerPrix() async {
     if (_categorieSelectionnee == null || _zoneSelectionnee == null) return;
-
     setState(() => _calculEnCours = true);
-
     try {
       final reponse = await ApiService.calculerPrix(
         categorie: _categorieSelectionnee!,
         zoneCode:  _zoneSelectionnee!,
       );
-
+      if (!mounted) return;
       if (reponse['success'] == true) {
         setState(() {
           _surDevis  = reponse['sur_devis'] ?? false;
@@ -105,71 +101,129 @@ class _HomeClientState extends State<HomeClient> {
     } catch (e) {
       // silencieux
     } finally {
-      setState(() => _calculEnCours = false);
+      if (mounted) setState(() => _calculEnCours = false);
     }
   }
 
   // ─── Récupérer position GPS ───────────────────────────────────────────────
   Future<void> _recupererPositionGPS() async {
+    // ✅ Capturer le messenger AVANT tout await
+    final messenger = ScaffoldMessenger.of(context);
+
     setState(() => _gpsEnCours = true);
 
     try {
-      LocationPermission permission = await Geolocator.checkPermission();
+      // ✅ Étape 1 — vérifier si le GPS est activé sur le téléphone
+      // Sur mobile réel, le GPS peut être désactivé dans les paramètres
+      // Geolocator.checkPermission() ne vérifie pas ça — c'est une étape séparée
+      final serviceActif = await Geolocator.isLocationServiceEnabled();
+      if (!serviceActif) {
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('Active le GPS dans les paramètres du téléphone'),
+          backgroundColor: Colors.red,
+        ));
+        // Ouvre directement les paramètres GPS du téléphone
+        await Geolocator.openLocationSettings();
+        return;
+      }
 
+      // ✅ Étape 2 — vérifier/demander la permission
+      LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          _snack('Permission GPS refusée', Colors.red);
+          messenger.showSnackBar(const SnackBar(
+            content:         Text('Permission GPS refusée'),
+            backgroundColor: Colors.red,
+          ));
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        _snack('GPS bloqué — active-le dans les paramètres', Colors.red);
+        // 📚 deniedForever = l'utilisateur a coché "Ne plus demander"
+        // requestPermission() ne peut plus rien faire dans ce cas
+        // On doit envoyer l'utilisateur dans les paramètres de l'app
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+              'GPS bloqué — Paramètres > Apps > Tchira > Permissions'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ));
+        await Geolocator.openAppSettings();
         return;
       }
 
+      // ✅ Étape 3 — récupérer la position
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       );
 
+      if (!mounted) return;
+
+      // Sur Chrome → coordonnées brutes (geocoding ne fonctionne pas sur web)
       if (kIsWeb) {
-        final adresse =
-            '${position.latitude.toStringAsFixed(5)}, '
-            '${position.longitude.toStringAsFixed(5)}';
-        setState(() => _departCtrl.text = adresse);
-        _snack('✅ Coordonnées récupérées !', Colors.green);
-        return;
-      }
-
-      final placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-
-      if (placemarks.isNotEmpty) {
-        final place   = placemarks.first;
-        final adresse = [
-          place.street,
-          place.subLocality,
-          place.locality,
-        ].where((e) => e != null && e.isNotEmpty).join(', ');
-
-        setState(() => _departCtrl.text = adresse);
-        _snack('✅ Position récupérée !', Colors.green);
-      } else {
         setState(() => _departCtrl.text =
             '${position.latitude.toStringAsFixed(5)}, '
             '${position.longitude.toStringAsFixed(5)}');
-        _snack('✅ Position récupérée !', Colors.green);
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('✅ Coordonnées récupérées !'),
+          backgroundColor: Colors.green,
+        ));
+        return;
+      }
+
+      // Sur mobile → convertir coordonnées en adresse lisible
+      try {
+        final placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+
+        if (!mounted) return;
+
+        if (placemarks.isNotEmpty) {
+          final place   = placemarks.first;
+          final adresse = [
+            place.street,
+            place.subLocality,
+            place.locality,
+          ].where((e) => e != null && e.isNotEmpty).join(', ');
+
+          setState(() => _departCtrl.text =
+              adresse.isNotEmpty ? adresse : '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}');
+        } else {
+          setState(() => _departCtrl.text =
+              '${position.latitude.toStringAsFixed(5)}, '
+              '${position.longitude.toStringAsFixed(5)}');
+        }
+
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('✅ Position récupérée !'),
+          backgroundColor: Colors.green,
+        ));
+      } catch (_) {
+        // Si geocoding échoue → on met les coordonnées brutes
+        if (!mounted) return;
+        setState(() => _departCtrl.text =
+            '${position.latitude.toStringAsFixed(5)}, '
+            '${position.longitude.toStringAsFixed(5)}');
+        messenger.showSnackBar(const SnackBar(
+          content:         Text('✅ Position récupérée !'),
+          backgroundColor: Colors.green,
+        ));
       }
 
     } catch (e) {
-      _snack('Impossible de récupérer la position', Colors.red);
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content:         Text('Impossible de récupérer la position : $e'),
+        backgroundColor: Colors.red,
+      ));
     } finally {
-      setState(() => _gpsEnCours = false);
+      if (mounted) setState(() => _gpsEnCours = false);
     }
   }
 
@@ -188,12 +242,13 @@ class _HomeClientState extends State<HomeClient> {
       return;
     }
     if (_surDevis) {
-      _snack('Contacte l\'administrateur pour ce type de colis',
-          Colors.orange);
+      _snack('Contacte l\'administrateur pour ce type de colis', Colors.orange);
       return;
     }
 
-    final provider = context.read<LivraisonProvider>();
+    // ✅ Capturer AVANT le await
+    final provider  = context.read<LivraisonProvider>();
+    final messenger = ScaffoldMessenger.of(context);
 
     final succes = await provider.creerLivraison(
       adresseDepart:  _departCtrl.text.trim(),
@@ -220,23 +275,34 @@ class _HomeClientState extends State<HomeClient> {
         _prixBase              = null;
         _fraisZone             = null;
       });
-      _snack('✅ Livraison créée avec succès !', Colors.green);
+      messenger.showSnackBar(const SnackBar(
+        content:         Text('✅ Livraison créée avec succès !'),
+        backgroundColor: Colors.green,
+      ));
     } else {
-      _snack('❌ Erreur lors de la création', Colors.red);
+      messenger.showSnackBar(const SnackBar(
+        content:         Text('❌ Erreur lors de la création'),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 
-  // ─── Déconnecter ─────────────────────────────────────────────────────────
+  // ─── Déconnecter ──────────────────────────────────────────────────────────
   Future<void> _deconnecter() async {
     _timer?.cancel();
-    await context.read<AuthProvider>().deconnecter();
+    // ✅ Capturer AVANT le await
+    final auth      = context.read<AuthProvider>();
+    final navigator = Navigator.of(context);
+
+    await auth.deconnecter();
+
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
+    navigator.pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
   }
 
+  // 📚 _snack reste pour les validations synchrones uniquement
   void _snack(String msg, Color couleur) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: couleur),
@@ -282,7 +348,6 @@ class _HomeClientState extends State<HomeClient> {
 
       body: Column(
         children: [
-
           // ── Bannière ──────────────────────────────────────────────────
           Container(
             width: double.infinity,
@@ -376,7 +441,6 @@ class _HomeClientState extends State<HomeClient> {
                               color:      Color(0xFF0D7377),
                             ),
                           ),
-                          // ✅ Indicateur de rafraîchissement auto
                           Row(
                             children: [
                               Container(
@@ -391,8 +455,8 @@ class _HomeClientState extends State<HomeClient> {
                               const Text(
                                 'Live',
                                 style: TextStyle(
-                                  color:    Colors.green,
-                                  fontSize: 11,
+                                  color:      Colors.green,
+                                  fontSize:   11,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -401,18 +465,15 @@ class _HomeClientState extends State<HomeClient> {
                         ],
                       ),
                     ),
-                    if (provider.isLoading &&
-                        provider.mesLivraisons.isEmpty)
+                    if (provider.isLoading && provider.mesLivraisons.isEmpty)
                       const Center(child: CircularProgressIndicator()),
-                    if (!provider.isLoading &&
-                        provider.mesLivraisons.isEmpty)
+                    if (!provider.isLoading && provider.mesLivraisons.isEmpty)
                       _etatVide(),
                     Expanded(
                       child: ListView.builder(
                         itemCount: provider.mesLivraisons.length,
                         itemBuilder: (context, index) =>
-                            _carteLivraison(
-                                provider.mesLivraisons[index]),
+                            _carteLivraison(provider.mesLivraisons[index]),
                       ),
                     ),
                   ],
@@ -424,7 +485,7 @@ class _HomeClientState extends State<HomeClient> {
     );
   }
 
-  // ─── Carte adresses + bouton GPS ─────────────────────────────────────────
+  // ─── Carte adresses + bouton GPS ──────────────────────────────────────────
   Widget _carteFormulaire() {
     return _conteneur(
       titre: '📍 Adresses',
@@ -452,7 +513,7 @@ class _HomeClientState extends State<HomeClient> {
                 child: _gpsEnCours
                     ? const Padding(
                         padding: EdgeInsets.all(14),
-                        child: CircularProgressIndicator(
+                        child:   CircularProgressIndicator(
                           color:       Colors.white,
                           strokeWidth: 2,
                         ),
@@ -503,8 +564,7 @@ class _HomeClientState extends State<HomeClient> {
 
           return GestureDetector(
             onTap: () {
-              setState(
-                  () => _categorieSelectionnee = tarif['categorie']);
+              setState(() => _categorieSelectionnee = tarif['categorie']);
               _calculerPrix();
             },
             child: Container(
@@ -528,9 +588,7 @@ class _HomeClientState extends State<HomeClient> {
                     child: Text(
                       tarif['label'],
                       style: TextStyle(
-                        color: selectionne
-                            ? Colors.white
-                            : Colors.black87,
+                        color:      selectionne ? Colors.white : Colors.black87,
                         fontWeight: FontWeight.w600,
                         fontSize:   14,
                       ),
@@ -541,7 +599,7 @@ class _HomeClientState extends State<HomeClient> {
                         ? 'Sur devis'
                         : '${_formatPrix(tarif['prix_base'])} FCFA',
                     style: TextStyle(
-                      color: selectionne
+                      color:      selectionne
                           ? Colors.white70
                           : const Color(0xFF0D7377),
                       fontWeight: FontWeight.bold,
@@ -566,7 +624,8 @@ class _HomeClientState extends State<HomeClient> {
       child: Column(
         children: _zones.map((zone) {
           final selectionne = _zoneSelectionnee == zone['code'];
-          final frais       = zone['frais_supplementaires'] as int;
+          // ✅ Cast sécurisé — même fix que réceptionniste
+          final frais = (zone['frais_supplementaires'] as num?)?.toInt() ?? 0;
 
           return GestureDetector(
             onTap: () {
@@ -597,7 +656,7 @@ class _HomeClientState extends State<HomeClient> {
                         Text(
                           zone['nom'],
                           style: TextStyle(
-                            color: selectionne
+                            color:      selectionne
                                 ? Colors.white
                                 : Colors.black87,
                             fontWeight: FontWeight.w600,
@@ -607,7 +666,7 @@ class _HomeClientState extends State<HomeClient> {
                         Text(
                           zone['description'],
                           style: TextStyle(
-                            color: selectionne
+                            color:    selectionne
                                 ? Colors.white60
                                 : Colors.grey,
                             fontSize: 12,
@@ -621,7 +680,7 @@ class _HomeClientState extends State<HomeClient> {
                         ? 'Inclus'
                         : '+${_formatPrix(frais)} FCFA',
                     style: TextStyle(
-                      color: selectionne
+                      color:      selectionne
                           ? Colors.white70
                           : const Color(0xFF0D7377),
                       fontWeight: FontWeight.bold,
@@ -812,10 +871,9 @@ class _HomeClientState extends State<HomeClient> {
             ),
             const Padding(
               padding: EdgeInsets.only(left: 10),
-              child: SizedBox(
+              child:   SizedBox(
                 height: 16,
-                child:  VerticalDivider(
-                    color: Colors.grey, thickness: 1),
+                child:  VerticalDivider(color: Colors.grey, thickness: 1),
               ),
             ),
             _adresseLigne(
@@ -905,18 +963,16 @@ class _HomeClientState extends State<HomeClient> {
         prefixIcon: Icon(icone, color: couleurIcone, size: 18),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide:
-              const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide:   const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide:
-              const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide:   const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(
-              color: Color(0xFF0D7377), width: 2),
+          borderSide:
+              const BorderSide(color: Color(0xFF0D7377), width: 2),
         ),
         filled:         true,
         fillColor:      const Color(0xFFF8FAFC),
@@ -938,8 +994,7 @@ class _HomeClientState extends State<HomeClient> {
         Expanded(
           child: Text(
             texte,
-            style: const TextStyle(
-                fontSize: 13, color: Colors.black87),
+            style: const TextStyle(fontSize: 13, color: Colors.black87),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -953,11 +1008,7 @@ class _HomeClientState extends State<HomeClient> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const SizedBox(height: 40),
-          Icon(
-            Icons.inbox_outlined,
-            size:  64,
-            color: Colors.grey.shade300,
-          ),
+          Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 12),
           Text(
             'Aucune livraison pour l\'instant',

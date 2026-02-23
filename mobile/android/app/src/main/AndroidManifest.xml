@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- ✅ Permissions GPS — obligatoires sur Android réel -->
+<!-- Sans ces lignes, Geolocator échoue silencieusement -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <application
         android:label="tchira_delivery"
         android:name="${applicationName}"
