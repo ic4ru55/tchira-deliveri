@@ -4,7 +4,14 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 class SocketService {
   static io.Socket? _socket;
 
+  // ✅ Même logique que api_service.dart — 3 cas clairs
+  // kReleaseMode → APK final → Railway
+  // kIsWeb       → Chrome dev → localhost direct
+  // sinon        → émulateur Android dev → 10.0.2.2
   static String get _serverUrl {
+    if (kReleaseMode) {
+      return 'https://celebrated-upliftment-production-00fa.up.railway.app';
+    }
     if (kIsWeb) return 'http://localhost:5000';
     return 'http://10.0.2.2:5000';
   }
@@ -59,6 +66,10 @@ class SocketService {
     _socket?.on('position_mise_a_jour', (data) {
       callback(data['lat'], data['lng']);
     });
+  }
+
+  static void arreterEcoutePosition() {
+    _socket?.off('position_mise_a_jour');
   }
 
   static void ecouterStatut(Function(String statut) callback) {

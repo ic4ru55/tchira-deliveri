@@ -23,7 +23,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LivraisonProvider>().chargerLivraisonsDisponibles();
 
-      // ✅ Rafraîchissement automatique toutes les 5 secondes
       _timer = Timer.periodic(const Duration(seconds: 5), (_) {
         if (mounted) {
           context.read<LivraisonProvider>()
@@ -41,38 +40,36 @@ class _HomeLibreurState extends State<HomeLibreur> {
 
   Future<void> _deconnecter() async {
     _timer?.cancel();
-    await context.read<AuthProvider>().deconnecter();
+    final auth      = context.read<AuthProvider>();
+    final navigator = Navigator.of(context);
+    await auth.deconnecter();
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
+    navigator.pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
   }
 
   Future<void> _accepterLivraison(String id) async {
-    final provider = context.read<LivraisonProvider>();
-    final succes   = await provider.accepterLivraison(id);
+    final provider  = context.read<LivraisonProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
 
+    final succes = await provider.accepterLivraison(id);
     if (!mounted) return;
 
     if (succes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:         Text('✅ Mission acceptée !'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.push(
-        context,
+      messenger.showSnackBar(const SnackBar(
+        content:         Text('✅ Mission acceptée !'),
+        backgroundColor: Colors.green,
+      ));
+      navigator.push(
         MaterialPageRoute(builder: (_) => const MissionScreen()),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:         Text('❌ Mission non disponible'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      messenger.showSnackBar(const SnackBar(
+        content:         Text('❌ Mission non disponible'),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 
@@ -80,6 +77,13 @@ class _HomeLibreurState extends State<HomeLibreur> {
   Widget build(BuildContext context) {
     final auth     = context.watch<AuthProvider>();
     final provider = context.watch<LivraisonProvider>();
+
+    // ✅ Si une mission est en cours → on affiche le bandeau "Reprendre"
+    // C'était le bug : quand le livreur revenait en arrière,
+    // livraisonActive existait encore mais rien ne le montrait
+    final missionEnCours = provider.livraisonActive != null &&
+        (provider.livraisonActive!.statut == 'en_cours' ||
+         provider.livraisonActive!.statut == 'en_livraison');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -93,10 +97,8 @@ class _HomeLibreurState extends State<HomeLibreur> {
             const Text(
               'Tchira Express',
               style: TextStyle(
-                color:      Colors.white,
-                fontSize:   16,
-                fontWeight: FontWeight.bold,
-              ),
+                color: Colors.white, fontSize: 16,
+                fontWeight: FontWeight.bold),
             ),
             Text(
               'Livreur : ${auth.user?.nom ?? ""}',
@@ -105,29 +107,21 @@ class _HomeLibreurState extends State<HomeLibreur> {
           ],
         ),
         actions: [
-          // ✅ Badge Live
           Padding(
             padding: const EdgeInsets.only(right: 4),
             child: Center(
               child: Row(
                 children: [
                   Container(
-                    width:  8,
-                    height: 8,
+                    width: 8, height: 8,
                     decoration: const BoxDecoration(
-                      color: Colors.greenAccent,
-                      shape: BoxShape.circle,
-                    ),
+                      color: Colors.greenAccent, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 4),
-                  const Text(
-                    'Live',
-                    style: TextStyle(
-                      color:      Colors.greenAccent,
-                      fontSize:   11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  const Text('Live',
+                      style: TextStyle(
+                        color: Colors.greenAccent, fontSize: 11,
+                        fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -148,7 +142,56 @@ class _HomeLibreurState extends State<HomeLibreur> {
       body: Column(
         children: [
 
-          // ── Bannière stats ────────────────────────────────────────────────
+          // ✅ Bandeau "Mission en cours" — visible quand le livreur
+          // est revenu en arrière par accident pendant une livraison
+          // Un simple tap le renvoie directement sur MissionScreen
+          if (missionEnCours)
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MissionScreen()),
+              ),
+              child: Container(
+                width:   double.infinity,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 14),
+                color: Colors.orange.shade700,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.local_shipping,
+                      color: Colors.white, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '🚚 Mission en cours !',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            provider.livraisonActive!.adresseArrivee,
+                            style: const TextStyle(
+                              color: Colors.white70, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      color: Colors.white, size: 16),
+                  ],
+                ),
+              ),
+            ),
+
+          // ── Bannière stats ────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
@@ -169,43 +212,36 @@ class _HomeLibreurState extends State<HomeLibreur> {
                 const SizedBox(width: 12),
                 _statCard(
                   label:        'Statut',
-                  valeur:       'Disponible',
+                  valeur:       missionEnCours ? 'En mission' : 'Disponible',
                   icone:        Icons.circle,
-                  couleurIcone: Colors.greenAccent,
+                  couleurIcone: missionEnCours
+                      ? Colors.orange
+                      : Colors.greenAccent,
                 ),
               ],
             ),
           ),
 
-          // ── Titre liste ───────────────────────────────────────────────────
+          // ── Titre liste ───────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
-                  children: [
-                    Icon(
-                      Icons.delivery_dining,
-                      color: Color(0xFF0D7377),
-                      size:  20,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Livraisons disponibles',
-                      style: TextStyle(
-                        fontSize:   16,
-                        fontWeight: FontWeight.bold,
-                        color:      Color(0xFF0D7377),
-                      ),
-                    ),
-                  ],
+                const Icon(
+                  Icons.delivery_dining,
+                  color: Color(0xFF0D7377), size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Livraisons disponibles',
+                  style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold,
+                    color: Color(0xFF0D7377)),
                 ),
               ],
             ),
           ),
 
-          // ── Liste ─────────────────────────────────────────────────────────
+          // ── Liste ─────────────────────────────────────────────────────
           Expanded(
             child: provider.isLoading &&
                     provider.livraisonsDisponibles.isEmpty
@@ -220,8 +256,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
                               horizontal: 16),
                           itemCount:
                               provider.livraisonsDisponibles.length,
-                          itemBuilder: (context, index) =>
-                              _carteMission(
+                          itemBuilder: (context, index) => _carteMission(
                             provider.livraisonsDisponibles[index],
                             provider,
                           ),
@@ -233,7 +268,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Carte mission ─────────────────────────────────────────────────────────
   Widget _carteMission(Livraison livraison, LivraisonProvider provider) {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -242,9 +276,8 @@ class _HomeLibreurState extends State<HomeLibreur> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color:      Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset:     const Offset(0, 3),
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 10, offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -253,8 +286,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
-            // Prix + date
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -262,102 +293,74 @@ class _HomeLibreurState extends State<HomeLibreur> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color:        const Color(0xFF0D7377),
+                    color: const Color(0xFF0D7377),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    // ✅ Prix en FCFA
                     '${_formatPrix(livraison.prix)} FCFA',
                     style: const TextStyle(
-                      color:      Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize:   14,
-                    ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                 ),
                 Text(
                   _formatDate(livraison.createdAt),
-                  style: const TextStyle(
-                    color:    Colors.grey,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ],
             ),
             const SizedBox(height: 14),
 
-            // Client
             Row(
               children: [
                 const CircleAvatar(
-                  radius:          16,
+                  radius: 16,
                   backgroundColor: Color(0xFFD1FAE5),
-                  child: Icon(
-                    Icons.person,
-                    color: Color(0xFF0D7377),
-                    size:  18,
-                  ),
+                  child: Icon(Icons.person,
+                      color: Color(0xFF0D7377), size: 18),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   livraison.client?['nom'] ?? 'Client',
                   style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize:   14,
-                  ),
+                      fontWeight: FontWeight.w600, fontSize: 14),
                 ),
                 const SizedBox(width: 6),
                 Text(
                   livraison.client?['telephone'] ?? '',
-                  style: const TextStyle(
-                    color:    Colors.grey,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ],
             ),
             const SizedBox(height: 14),
 
-            // Adresses
             _adresseLigne(
-              icone:   Icons.trip_origin,
-              couleur: Colors.green,
-              texte:   livraison.adresseDepart,
-              label:   'Départ',
+              icone: Icons.trip_origin, couleur: Colors.green,
+              texte: livraison.adresseDepart, label: 'Départ',
             ),
             const SizedBox(height: 6),
             _adresseLigne(
-              icone:   Icons.location_on,
-              couleur: Colors.red,
-              texte:   livraison.adresseArrivee,
-              label:   'Arrivée',
+              icone: Icons.location_on, couleur: Colors.red,
+              texte: livraison.adresseArrivee, label: 'Arrivée',
             ),
 
-            // Description colis
             if (livraison.descriptionColis.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color:        const Color(0xFFF1F5F9),
+                  color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.inventory_2_outlined,
-                      size:  16,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.inventory_2_outlined,
+                        size: 16, color: Colors.grey),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        livraison.descriptionColis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color:    Colors.grey,
-                        ),
-                      ),
+                      child: Text(livraison.descriptionColis,
+                          style: const TextStyle(
+                              fontSize: 13, color: Colors.grey)),
                     ),
                   ],
                 ),
@@ -366,26 +369,20 @@ class _HomeLibreurState extends State<HomeLibreur> {
 
             const SizedBox(height: 14),
 
-            // Bouton accepter
             SizedBox(
-              width:  double.infinity,
-              height: 46,
+              width: double.infinity, height: 46,
               child: ElevatedButton.icon(
-                // ✅ Plus de provider(context) — on utilise le provider passé en paramètre
                 onPressed: provider.isLoading
                     ? null
                     : () => _accepterLivraison(livraison.id),
                 icon:  const Icon(Icons.check_circle_outline, size: 18),
-                label: const Text(
-                  'Accepter cette mission',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
+                label: const Text('Accepter cette mission',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF16A34A),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -395,39 +392,23 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── État vide ─────────────────────────────────────────────────────────────
   Widget _etatVide() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.delivery_dining,
-            size:  80,
-            color: Colors.grey.shade200,
-          ),
+          Icon(Icons.delivery_dining, size: 80, color: Colors.grey.shade200),
           const SizedBox(height: 16),
-          Text(
-            'Aucune mission disponible',
-            style: TextStyle(
-              fontSize: 16,
-              color:    Colors.grey.shade400,
-            ),
-          ),
+          Text('Aucune mission disponible',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade400)),
           const SizedBox(height: 8),
-          Text(
-            'Mise à jour automatique en cours...',
-            style: TextStyle(
-              fontSize: 13,
-              color:    Colors.grey.shade400,
-            ),
-          ),
+          Text('Mise à jour automatique en cours...',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
         ],
       ),
     );
   }
 
-  // ── Carte statistique ─────────────────────────────────────────────────────
   Widget _statCard({
     required String   label,
     required String   valeur,
@@ -438,7 +419,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color:        Colors.white.withValues(alpha: 0.12),
+          color: Colors.white.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -448,21 +429,13 @@ class _HomeLibreurState extends State<HomeLibreur> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  valeur,
-                  style: const TextStyle(
-                    color:      Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize:   18,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color:    Colors.white70,
-                    fontSize: 11,
-                  ),
-                ),
+                Text(valeur,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold, fontSize: 18)),
+                Text(label,
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 11)),
               ],
             ),
           ],
@@ -471,7 +444,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Ligne adresse ─────────────────────────────────────────────────────────
   Widget _adresseLigne({
     required IconData icone,
     required Color    couleur,
@@ -486,23 +458,14 @@ class _HomeLibreurState extends State<HomeLibreur> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                color:    Colors.grey,
-              ),
-            ),
+            Text(label,
+                style: const TextStyle(fontSize: 10, color: Colors.grey)),
             SizedBox(
               width: 260,
-              child: Text(
-                texte,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color:    Colors.black87,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(texte,
+                  style: const TextStyle(
+                      fontSize: 13, color: Colors.black87),
+                  overflow: TextOverflow.ellipsis),
             ),
           ],
         ),
@@ -510,7 +473,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   String _formatPrix(dynamic montant) {
     if (montant == null) return '0';
     final val = (montant as num).toInt();
@@ -523,7 +485,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
   String _formatDate(DateTime date) {
     final now  = DateTime.now();
     final diff = now.difference(date);
-
     if (diff.inMinutes < 60) return 'Il y a ${diff.inMinutes} min';
     if (diff.inHours   < 24) return 'Il y a ${diff.inHours}h';
     return '${date.day}/${date.month}/${date.year}';

@@ -15,68 +15,86 @@ class MissionScreen extends StatefulWidget {
 }
 
 class _MissionScreenState extends State<MissionScreen> {
-  bool                       _envoiPosition = false;
+  bool                          _envoiPosition = false;
   StreamSubscription<Position>? _gpsStream;
+  Timer?                        _timerWeb;
 
   @override
   void dispose() {
-    // ✅ Toujours annuler le stream GPS quand on quitte l'écran
-    // sinon il continue de tourner en arrière-plan et vide la batterie
     _gpsStream?.cancel();
+    _timerWeb?.cancel();
     super.dispose();
   }
 
   Future<void> _demarrerEnvoiPosition() async {
-  // ✅ Capturer AVANT tout await
-  final provider  = context.read<LivraisonProvider>();
-  final livraison = provider.livraisonActive;
-  if (livraison == null) return;
+    // ✅ Capturer AVANT tout await — règle fondamentale Flutter async
+    final provider  = context.read<LivraisonProvider>();
+    final livraison = provider.livraisonActive;
+    if (livraison == null) return;
 
-  LocationPermission permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied) {
-      // ✅ mounted check puis utilisation du context
+    // ✅ Étape 1 — GPS activé sur le téléphone ?
+    // Sans cette vérification, getPositionStream() échoue
+    // silencieusement sur mobile réel — c'est pourquoi "rien ne se passait"
+    final serviceActif = await Geolocator.isLocationServiceEnabled();
+    if (!serviceActif) {
       if (!mounted) return;
-      _snack('Permission GPS refusée', Colors.red);
+      _snack('Active le GPS dans les paramètres du téléphone', Colors.red);
+      await Geolocator.openLocationSettings();
       return;
     }
-  }
-  if (permission == LocationPermission.deniedForever) {
+
+    // ✅ Étape 2 — permission accordée ?
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (!mounted) return;
+        _snack('Permission GPS refusée', Colors.red);
+        return;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
+      _snack('GPS bloqué — Paramètres > Apps > Tchira > Permissions', Colors.red);
+      await Geolocator.openAppSettings();
+      return;
+    }
+
     if (!mounted) return;
-    _snack('GPS bloqué — active-le dans les paramètres', Colors.red);
-    return;
-  }
+    setState(() => _envoiPosition = true);
 
-  if (!mounted) return;
-  setState(() => _envoiPosition = true);
+    if (kIsWeb) {
+      _demarrerGpsWeb(livraison.id);
+      return;
+    }
 
-  if (kIsWeb) {
-    _demarrerGpsWeb(livraison.id);
-    return;
-  }
-
-  const settings = LocationSettings(
-    accuracy:       LocationAccuracy.high,
-    distanceFilter: 10,
-  );
-
-  _gpsStream = Geolocator.getPositionStream(
-    locationSettings: settings,
-  ).listen((Position position) {
-    if (!mounted) return;
-    SocketService.envoyerPosition(
-      livraisonId: livraison.id,
-      lat:         position.latitude,
-      lng:         position.longitude,
+    // ✅ Étape 3 — stream GPS continu sur mobile
+    // distanceFilter: 10 → émet seulement si le livreur a bougé de 10m
+    const settings = LocationSettings(
+      accuracy:       LocationAccuracy.high,
+      distanceFilter: 10,
     );
-  });
-}
 
-  // ── GPS Web : Timer toutes les 10s ────────────────────────────────────────
-  // Sur Chrome, getPositionStream n'est pas fiable.
-  // On récupère manuellement la position toutes les 10 secondes.
-  Timer? _timerWeb;
+    _gpsStream = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen(
+      (Position position) {
+        if (!mounted) return;
+        SocketService.envoyerPosition(
+          livraisonId: livraison.id,
+          lat:         position.latitude,
+          lng:         position.longitude,
+        );
+      },
+      // ✅ onError — avant on ne voyait pas les erreurs du stream
+      // C'est pourquoi le bouton semblait ne rien faire
+      onError: (erreur) {
+        if (!mounted) return;
+        _snack('Erreur GPS : $erreur', Colors.red);
+        setState(() => _envoiPosition = false);
+      },
+    );
+  }
 
   void _demarrerGpsWeb(String livraisonId) {
     _timerWeb = Timer.periodic(
@@ -98,7 +116,7 @@ class _MissionScreenState extends State<MissionScreen> {
             lng:         position.longitude,
           );
         } catch (_) {
-          // Silencieux — si le GPS échoue on réessaie au prochain tick
+          // Silencieux — on réessaie au prochain tick
         }
       },
     );
@@ -113,36 +131,34 @@ class _MissionScreenState extends State<MissionScreen> {
   }
 
   Future<void> _changerStatut(String statut) async {
-  // ✅ Capturer provider ET navigator AVANT tout await
-  final provider  = context.read<LivraisonProvider>();
-  final navigator = Navigator.of(context);
-  final livraison = provider.livraisonActive;
-  if (livraison == null) return;
+    // ✅ Capturer AVANT tout await
+    final provider  = context.read<LivraisonProvider>();
+    final navigator = Navigator.of(context);
+    final livraison = provider.livraisonActive;
+    if (livraison == null) return;
 
-  final succes = await provider.mettreAJourStatut(livraison.id, statut);
+    final succes = await provider.mettreAJourStatut(livraison.id, statut);
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  if (succes) {
-    _snack(
-      statut == 'en_livraison'
-          ? '🚚 Livraison démarrée !'
-          : '✅ Livraison terminée !',
-      Colors.green,
-    );
-
-    if (statut == 'livre') {
-      await _arreterEnvoiPosition();
-      provider.reinitialiserLivraisonActive();
-      // ✅ On utilise navigator capturé avant l'await
-      navigator.pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeLibreur()),
+    if (succes) {
+      _snack(
+        statut == 'en_livraison'
+            ? '🚚 Livraison démarrée !'
+            : '✅ Livraison terminée !',
+        Colors.green,
       );
+      if (statut == 'livre') {
+        await _arreterEnvoiPosition();
+        provider.reinitialiserLivraisonActive();
+        navigator.pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeLibreur()),
+        );
+      }
+    } else {
+      _snack('❌ Erreur mise à jour statut', Colors.red);
     }
-  } else {
-    _snack('❌ Erreur mise à jour statut', Colors.red);
   }
-}
 
   void _snack(String msg, Color couleur) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -159,10 +175,7 @@ class _MissionScreenState extends State<MissionScreen> {
       return Scaffold(
         appBar: AppBar(
           backgroundColor: const Color(0xFF1B3A6B),
-          title: const Text(
-            'Mission',
-            style: TextStyle(color: Colors.white),
-          ),
+          title: const Text('Mission', style: TextStyle(color: Colors.white)),
         ),
         body: const Center(child: Text('Aucune mission active')),
       );
@@ -170,7 +183,6 @@ class _MissionScreenState extends State<MissionScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B3A6B),
         elevation: 0,
@@ -184,10 +196,7 @@ class _MissionScreenState extends State<MissionScreen> {
             Text(
               'Mission en cours',
               style: TextStyle(
-                color:      Colors.white,
-                fontSize:   16,
-                fontWeight: FontWeight.bold,
-              ),
+                color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
             ),
             Text(
               'Gérez votre livraison',
@@ -196,7 +205,6 @@ class _MissionScreenState extends State<MissionScreen> {
           ],
         ),
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -211,11 +219,7 @@ class _MissionScreenState extends State<MissionScreen> {
                   const CircleAvatar(
                     radius:          24,
                     backgroundColor: Color(0xFFDBEAFE),
-                    child: Icon(
-                      Icons.person,
-                      color: Color(0xFF2563EB),
-                      size:  26,
-                    ),
+                    child: Icon(Icons.person, color: Color(0xFF2563EB), size: 26),
                   ),
                   const SizedBox(width: 12),
                   Column(
@@ -224,16 +228,11 @@ class _MissionScreenState extends State<MissionScreen> {
                       Text(
                         livraison.client?['nom'] ?? 'Client',
                         style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize:   16,
-                        ),
+                            fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       Text(
                         livraison.client?['telephone'] ?? '',
-                        style: const TextStyle(
-                          color:    Colors.grey,
-                          fontSize: 14,
-                        ),
+                        style: const TextStyle(color: Colors.grey, fontSize: 14),
                       ),
                     ],
                   ),
@@ -247,25 +246,19 @@ class _MissionScreenState extends State<MissionScreen> {
               child: Column(
                 children: [
                   _lignInfo(
-                    icone:   Icons.trip_origin,
-                    couleur: Colors.green,
-                    label:   'Départ',
-                    valeur:  livraison.adresseDepart,
+                    icone: Icons.trip_origin, couleur: Colors.green,
+                    label: 'Départ', valeur: livraison.adresseDepart,
                   ),
                   const SizedBox(height: 12),
                   _lignInfo(
-                    icone:   Icons.location_on,
-                    couleur: Colors.red,
-                    label:   'Arrivée',
-                    valeur:  livraison.adresseArrivee,
+                    icone: Icons.location_on, couleur: Colors.red,
+                    label: 'Arrivée', valeur: livraison.adresseArrivee,
                   ),
                   if (livraison.descriptionColis.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _lignInfo(
-                      icone:   Icons.inventory_2_outlined,
-                      couleur: Colors.grey,
-                      label:   'Colis',
-                      valeur:  livraison.descriptionColis,
+                      icone: Icons.inventory_2_outlined, couleur: Colors.grey,
+                      label: 'Colis', valeur: livraison.descriptionColis,
                     ),
                   ],
                   const SizedBox(height: 12),
@@ -274,10 +267,8 @@ class _MissionScreenState extends State<MissionScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Rémunération',
-                        style: TextStyle(color: Colors.grey, fontSize: 14),
-                      ),
+                      const Text('Rémunération',
+                          style: TextStyle(color: Colors.grey, fontSize: 14)),
                       Text(
                         '${_formatPrix(livraison.prix)} FCFA',
                         style: const TextStyle(
@@ -293,12 +284,10 @@ class _MissionScreenState extends State<MissionScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ── GPS ──────────────────────────────────────────────────
             _conteneur(
               titre: '📍 Partage de position',
               child: Column(
                 children: [
-                  // ✅ Indicateur visuel de l'état du GPS
                   Row(
                     children: [
                       Container(
@@ -318,9 +307,7 @@ class _MissionScreenState extends State<MissionScreen> {
                               ? 'Position GPS en cours de partage avec le client'
                               : 'Partagez votre position pour que le client puisse vous suivre',
                           style: TextStyle(
-                            color:    _envoiPosition
-                                ? Colors.green
-                                : Colors.grey,
+                            color:    _envoiPosition ? Colors.green : Colors.grey,
                             fontSize: 13,
                           ),
                         ),
@@ -330,7 +317,6 @@ class _MissionScreenState extends State<MissionScreen> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      // Bouton démarrer
                       Expanded(
                         child: SizedBox(
                           height: 46,
@@ -343,44 +329,33 @@ class _MissionScreenState extends State<MissionScreen> {
                                     width:  16,
                                     height: 16,
                                     child:  CircularProgressIndicator(
-                                      color:       Colors.white,
-                                      strokeWidth: 2,
-                                    ),
+                                      color: Colors.white, strokeWidth: 2),
                                   )
                                 : const Icon(Icons.my_location, size: 18),
                             label: Text(
-                              _envoiPosition
-                                  ? 'GPS actif'
-                                  : 'Démarrer GPS',
-                            ),
+                                _envoiPosition ? 'GPS actif' : 'Démarrer GPS'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF2563EB),
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                                  borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
                         ),
                       ),
-                      // ✅ Bouton arrêter — nouveau
                       if (_envoiPosition) ...[
                         const SizedBox(width: 10),
                         SizedBox(
                           height: 46,
                           child: OutlinedButton.icon(
                             onPressed: _arreterEnvoiPosition,
-                            icon: const Icon(
-                              Icons.stop_circle_outlined,
-                              size: 18,
-                            ),
+                            icon: const Icon(Icons.stop_circle_outlined, size: 18),
                             label: const Text('Arrêter'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red,
                               side: const BorderSide(color: Colors.red),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                                  borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
                         ),
@@ -391,7 +366,6 @@ class _MissionScreenState extends State<MissionScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
             _boutonsAction(livraison.statut),
             const SizedBox(height: 20),
           ],
@@ -401,35 +375,26 @@ class _MissionScreenState extends State<MissionScreen> {
   }
 
   Widget _carteStatut(String statut) {
-    final couleur = _couleurStatut(statut);
-    final label   = _labelStatut(statut);
-    final icone   = _iconeStatut(statut);
-
     return Container(
       width:   double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color:        couleur,
+        color:        _couleurStatut(statut),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          Icon(icone, color: Colors.white, size: 32),
+          Icon(_iconeStatut(statut), color: Colors.white, size: 32),
           const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Statut actuel',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
+              const Text('Statut actuel',
+                  style: TextStyle(color: Colors.white70, fontSize: 12)),
               Text(
-                label,
+                _labelStatut(statut),
                 style: const TextStyle(
-                  color:      Colors.white,
-                  fontSize:   20,
-                  fontWeight: FontWeight.bold,
-                ),
+                    color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -446,21 +411,16 @@ class _MissionScreenState extends State<MissionScreen> {
         child: ElevatedButton.icon(
           onPressed: () => _changerStatut('en_livraison'),
           icon:  const Icon(Icons.local_shipping, size: 20),
-          label: const Text(
-            'Démarrer la livraison',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
+          label: const Text('Démarrer la livraison',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.purple,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
       );
     }
-
     if (statut == 'en_livraison') {
       return SizedBox(
         width:  double.infinity,
@@ -468,21 +428,16 @@ class _MissionScreenState extends State<MissionScreen> {
         child: ElevatedButton.icon(
           onPressed: () => _changerStatut('livre'),
           icon:  const Icon(Icons.check_circle, size: 20),
-          label: const Text(
-            'Confirmer la livraison',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
+          label: const Text('Confirmer la livraison',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF16A34A),
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
       );
     }
-
     return const SizedBox.shrink();
   }
 
@@ -495,23 +450,19 @@ class _MissionScreenState extends State<MissionScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color:      Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset:     const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8, offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            titre,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize:   15,
-              color:      Color(0xFF1B3A6B),
-            ),
-          ),
+          Text(titre,
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize:   15,
+                  color:      Color(0xFF1B3A6B))),
           const SizedBox(height: 12),
           child,
         ],
@@ -534,14 +485,10 @@ class _MissionScreenState extends State<MissionScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(color: Colors.grey, fontSize: 11),
-              ),
-              Text(
-                valeur,
-                style: const TextStyle(fontSize: 14, color: Colors.black87),
-              ),
+              Text(label,
+                  style: const TextStyle(color: Colors.grey, fontSize: 11)),
+              Text(valeur,
+                  style: const TextStyle(fontSize: 14, color: Colors.black87)),
             ],
           ),
         ),
