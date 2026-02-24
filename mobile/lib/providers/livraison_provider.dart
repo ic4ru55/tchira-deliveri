@@ -16,10 +16,7 @@ class LivraisonProvider extends ChangeNotifier {
   bool            get isLoading             => _isLoading;
   String?         get erreur                => _erreur;
 
-  void _setLoading(bool val) {
-    _isLoading = val;
-    notifyListeners();
-  }
+  void _setLoading(bool val) { _isLoading = val; notifyListeners(); }
 
   // ─── CLIENT : créer une livraison ────────────────────────────────────────
   Future<bool> creerLivraison({
@@ -45,7 +42,6 @@ class LivraisonProvider extends ChangeNotifier {
         description:    description,
       );
       if (reponse['success'] == true) {
-        // Recharger toute la liste pour avoir les données fraîches
         await chargerMesLivraisons();
         return true;
       }
@@ -62,7 +58,6 @@ class LivraisonProvider extends ChangeNotifier {
   }
 
   // ─── CLIENT : charger ses livraisons ─────────────────────────────────────
-  // ✅ silencieux = true → pas de spinner lors du refresh auto toutes les 5s
   Future<void> chargerMesLivraisons({bool silencieux = false}) async {
     if (!silencieux) _setLoading(true);
     try {
@@ -72,36 +67,26 @@ class LivraisonProvider extends ChangeNotifier {
             .map((json) => Livraison.fromJson(json))
             .toList();
 
-        // ✅ Mettre à jour seulement si les données ont changé
         bool changed = nouvelles.length != _mesLivraisons.length;
         if (!changed) {
           for (int i = 0; i < nouvelles.length; i++) {
             if (nouvelles[i].statut != _mesLivraisons[i].statut ||
                 nouvelles[i].id    != _mesLivraisons[i].id) {
-              changed = true;
-              break;
+              changed = true; break;
             }
           }
         }
-
         if (changed) {
           _mesLivraisons = nouvelles;
-
-          // ✅ Mettre à jour la livraison active si elle est dans la liste
           if (_livraisonActive != null) {
-            final updated = _mesLivraisons.where(
-              (l) => l.id == _livraisonActive!.id,
-            );
-            if (updated.isNotEmpty) {
-              _livraisonActive = updated.first;
-            }
+            final updated = _mesLivraisons.where((l) => l.id == _livraisonActive!.id);
+            if (updated.isNotEmpty) _livraisonActive = updated.first;
           }
-
           notifyListeners();
         }
       }
     } catch (e) {
-      // silencieux — pas d'erreur affichée lors du refresh auto
+      // silencieux
     } finally {
       if (!silencieux) _setLoading(false);
     }
@@ -121,12 +106,10 @@ class LivraisonProvider extends ChangeNotifier {
         if (!changed) {
           for (int i = 0; i < nouvelles.length; i++) {
             if (nouvelles[i].id != _livraisonsDisponibles[i].id) {
-              changed = true;
-              break;
+              changed = true; break;
             }
           }
         }
-
         if (changed) {
           _livraisonsDisponibles = nouvelles;
           notifyListeners();
@@ -140,7 +123,20 @@ class LivraisonProvider extends ChangeNotifier {
   }
 
   // ─── LIVREUR : accepter une livraison ────────────────────────────────────
+  // ✅ PROTECTION LIVREUR OCCUPÉ :
+  // Si le livreur a déjà une mission active (en_cours ou en_livraison),
+  // on bloque côté Flutter avant même d'appeler l'API.
+  // Le backend fait aussi la vérification — double protection.
   Future<bool> accepterLivraison(String id) async {
+    // ✅ Vérification locale — livreur déjà occupé ?
+    if (_livraisonActive != null &&
+        (_livraisonActive!.statut == 'en_cours' ||
+         _livraisonActive!.statut == 'en_livraison')) {
+      _erreur = 'Tu as déjà une mission en cours. Termine-la avant d\'en accepter une autre.';
+      notifyListeners();
+      return false;
+    }
+
     _setLoading(true);
     try {
       final reponse = await ApiService.accepterLivraison(id);
@@ -164,7 +160,7 @@ class LivraisonProvider extends ChangeNotifier {
     }
   }
 
-  // ─── CLIENT : suivre une livraison en temps réel ─────────────────────────
+  // ─── CLIENT : suivre une livraison ───────────────────────────────────────
   void suivreLivraison(Livraison livraison) {
     _livraisonActive = livraison;
     SocketService.rejoindrelivraison(livraison.id);
@@ -172,7 +168,7 @@ class LivraisonProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── Écouter les événements Socket.io ────────────────────────────────────
+  // ─── Socket.io temps réel ─────────────────────────────────────────────────
   void _ecouterTempsReel(String livraisonId) {
     SocketService.ecouterPosition((lat, lng) {
       if (_livraisonActive?.id == livraisonId) {
@@ -188,8 +184,7 @@ class LivraisonProvider extends ChangeNotifier {
         _livraisonActive = _livraisonActive!.copyWith(statut: statut);
         final index = _mesLivraisons.indexWhere((l) => l.id == livraisonId);
         if (index != -1) {
-          _mesLivraisons[index] =
-              _mesLivraisons[index].copyWith(statut: statut);
+          _mesLivraisons[index] = _mesLivraisons[index].copyWith(statut: statut);
         }
         notifyListeners();
       }
@@ -215,15 +210,14 @@ class LivraisonProvider extends ChangeNotifier {
     }
   }
 
-  // ─── CLIENT : annuler une livraison ──────────────────────────────────────
+  // ─── CLIENT : annuler ────────────────────────────────────────────────────
   Future<bool> annulerLivraison(String id) async {
     try {
       final reponse = await ApiService.annulerLivraison(id);
       if (reponse['success'] == true) {
         final index = _mesLivraisons.indexWhere((l) => l.id == id);
         if (index != -1) {
-          _mesLivraisons[index] =
-              _mesLivraisons[index].copyWith(statut: 'annule');
+          _mesLivraisons[index] = _mesLivraisons[index].copyWith(statut: 'annule');
           notifyListeners();
         }
         return true;
@@ -234,7 +228,7 @@ class LivraisonProvider extends ChangeNotifier {
     }
   }
 
-  // ─── Réinitialiser la livraison active ───────────────────────────────────
+  // ─── Réinitialiser ───────────────────────────────────────────────────────
   void reinitialiserLivraisonActive() {
     _livraisonActive = null;
     notifyListeners();

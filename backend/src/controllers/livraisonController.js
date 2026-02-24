@@ -198,6 +198,18 @@ exports.getLivraison = async (req, res) => {
 // ─── ACCEPTER une livraison (livreur) ────────────────────────────────────────
 exports.accepterLivraison = async (req, res) => {
   try {
+    // ✅ Vérifier que le livreur n'a pas déjà une mission active
+    const missionEnCours = await Delivery.findOne({
+      livreur: req.user.id,
+      statut:  { $in: ['en_cours', 'en_livraison'] },
+    });
+    if (missionEnCours) {
+      return res.status(400).json({
+        success: false,
+        message: "Tu as déjà une mission en cours. Termine-la avant d'en accepter une autre.",
+      });
+    }
+
     let livraison = await Delivery.findById(req.params.id);
     if (!livraison) {
       return res.status(404).json({ success: false, message: 'Livraison introuvable' });

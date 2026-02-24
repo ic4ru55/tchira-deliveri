@@ -1,57 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// 📚 Firebase en foreground ne montre PAS les notifications automatiquement
-// flutter_local_notifications permet de les afficher manuellement
-// quand l'app est ouverte et visible
+// ✅ FILTRE PAR RÔLE :
+// Le backend envoie les notifs "nouvelle_livraison" uniquement aux livreurs.
+// Mais si un client a un fcm_token et se retrouve dans la liste par erreur,
+// on filtre aussi côté Flutter selon le rôle stocké en local.
+//
+// Types de notifications et qui doit les voir :
+//   nouvelle_livraison → livreur uniquement
+//   livreur_assigne    → client uniquement
+//   mission_assignee   → livreur uniquement
+//   statut_change      → client uniquement
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
-  // ─── Canal Android — doit correspondre à channelId du backend ────────────
   static const AndroidNotificationChannel _canal = AndroidNotificationChannel(
-    'tchira_notifications',       // ← même valeur que dans firebaseService.js
+    'tchira_notifications',
     'Tchira Express',
     description: 'Notifications de livraison Tchira Express',
     importance: Importance.high,
   );
 
-  // ─── Initialiser au démarrage de l'app ───────────────────────────────────
+  // Types de notifs autorisés par rôle
+  static const Map<String, List<String>> _typesParRole = {
+    'livreur':        ['nouvelle_livraison', 'mission_assignee'],
+    'client':         ['livreur_assigne',    'statut_change'],
+    'receptionniste': ['nouvelle_livraison', 'livreur_assigne', 'statut_change'],
+    'admin':          ['nouvelle_livraison', 'livreur_assigne', 'mission_assignee', 'statut_change'],
+  };
+
   static Future<void> initialiser() async {
-    // ✅ Créer le canal Android (obligatoire Android 8+)
     await _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_canal);
 
-    // ✅ Configurer l'icône de notification
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     );
     await _plugin.initialize(initSettings);
 
-    // ✅ Écouter les notifications Firebase quand l'app est EN AVANT-PLAN
-    // Sans ça, les notifications Firebase sont silencieuses en foreground
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    // ✅ Écouter les notifications Firebase en foreground avec filtre rôle
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final notification = message.notification;
       if (notification == null) return;
 
-      afficher(
+      // Lire le type de notif dans les données
+      final type = message.data['type'] as String?;
+
+      // Lire le rôle de l'utilisateur connecté
+      final prefs = await SharedPreferences.getInstance();
+      final role  = prefs.getString('role') ?? '';
+
+      // ✅ Filtrer — afficher seulement si le type correspond au rôle
+      if (type != null && role.isNotEmpty) {
+        final typesAutorises = _typesParRole[role] ?? [];
+        if (!typesAutorises.contains(type)) {
+          debugPrint('🔕 Notif ignorée pour rôle $role : type=$type');
+          return; // on n'affiche pas
+        }
+      }
+
+      await afficher(
         titre: notification.title ?? '',
         corps: notification.body  ?? '',
       );
     });
   }
 
-  // ─── Afficher une notification locale ────────────────────────────────────
   static Future<void> afficher({
     required String titre,
     required String corps,
   }) async {
     await _plugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000, // ID unique
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
       titre,
       corps,
       NotificationDetails(
