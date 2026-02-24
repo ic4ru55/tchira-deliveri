@@ -82,11 +82,23 @@ class _HomeLibreurState extends State<HomeLibreur>
     );
   }
 
+  // ✅ FIX MISSIONS LIÉES :
+  // Avant : provider.isLoading était global → désactivait TOUS les boutons
+  // simultanément → l'utilisateur pouvait cliquer sur 2 missions "en même temps"
+  // car les deux boutons répondaient au même état.
+  // Solution : tracker localement l'ID de la mission en cours d'acceptation.
+  String? _idEnCoursAcceptation;
+
   Future<void> _accepterLivraison(String id) async {
+    // Bloquer si une acceptation est déjà en cours (n'importe laquelle)
+    if (_idEnCoursAcceptation != null) return;
+    setState(() => _idEnCoursAcceptation = id);
+
     final provider  = context.read<LivraisonProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final succes    = await provider.accepterLivraison(id);
+    if (mounted) setState(() => _idEnCoursAcceptation = null);
     if (!mounted) return;
     if (succes) {
       messenger.showSnackBar(const SnackBar(
@@ -450,9 +462,12 @@ class _HomeLibreurState extends State<HomeLibreur>
           SizedBox(
             width: double.infinity, height: 46,
             child: ElevatedButton.icon(
-              onPressed: provider.isLoading
+              onPressed: _idEnCoursAcceptation != null
                   ? null : () => _accepterLivraison(livraison.id),
-              icon: const Icon(Icons.check_circle_outline, size: 18),
+              icon: _idEnCoursAcceptation == livraison.id
+                  ? const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.check_circle_outline, size: 18),
               label: const Text('Accepter cette mission',
                   style: TextStyle(fontWeight: FontWeight.w600)),
               style: ElevatedButton.styleFrom(

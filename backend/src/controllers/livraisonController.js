@@ -198,12 +198,12 @@ exports.getLivraison = async (req, res) => {
 // ─── ACCEPTER une livraison (livreur) ────────────────────────────────────────
 exports.accepterLivraison = async (req, res) => {
   try {
-    // ✅ Vérifier que le livreur n'a pas déjà une mission active
-    const missionEnCours = await Delivery.findOne({
+    // Vérifier que le livreur n'a pas déjà une mission active
+    const dejaOccupe = await Delivery.findOne({
       livreur: req.user.id,
       statut:  { $in: ['en_cours', 'en_livraison'] },
     });
-    if (missionEnCours) {
+    if (dejaOccupe) {
       return res.status(400).json({
         success: false,
         message: "Tu as déjà une mission en cours. Termine-la avant d'en accepter une autre.",
@@ -402,29 +402,58 @@ exports.annulerLivraison = async (req, res) => {
     livraison.statut = 'annule';
     await livraison.save();
 
+    // ✅ Notifier le client si c'est la réceptionniste ou l'admin qui annule
+    if (req.user.role === 'receptionniste' || req.user.role === 'admin') {
+      const client = await User.findById(livraison.client).select('fcm_token nom');
+      if (client?.fcm_token) {
+        await envoyerNotification({
+          fcmToken: client.fcm_token,
+          titre:    '❌ Livraison annulée',
+          corps:    `Votre livraison de ${livraison.adresse_depart} vers ${livraison.adresse_arrivee} a été annulée.`,
+          donnees:  { type: 'statut_change', statut: 'annule', livraison_id: livraison._id.toString() },
+        });
+      }
+    }
+
     res.status(200).json({ success: true, message: 'Livraison annulée' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ─── LIVREURS DISPONIBLES ─────────────────────────────────────────────────────
+// ─── TOUS LES LIVREURS avec leur statut (dispo / en mission) ─────────────────
+// Utilisé par la réceptionniste pour voir qui est libre
 exports.getLivreursDisponibles = async (req, res) => {
   try {
+    // IDs des livreurs actuellement en mission
     const livreursOccupes = await Delivery.distinct('livreur', {
       statut:  { $in: ['en_cours', 'en_livraison'] },
       livreur: { $ne: null },
     });
 
-    const livreursDisponibles = await User.find({
-      role: 'livreur',
-      _id:  { $nin: livreursOccupes },
-    }).select('nom telephone email');
+    // Tous les livreurs actifs
+    const tousLivreurs = await User.find({ role: 'livreur' })
+      .select('nom telephone email');
 
+    // Enrichir avec le statut
+    const livreurs = tousLivreurs.map((l) => ({
+      _id:       l._id,
+      nom:       l.nom,
+      telephone: l.telephone,
+      email:     l.email,
+      // ✅ statut calculé selon si l'ID est dans la liste des occupés
+      disponible: !livreursOccupes.some(
+        (id) => id && id.toString() === l._id.toString()
+      ),
+    }));
+
+    // Pour compatibilité : livreurs filtrés (seulement dispos) dans 'livreurs'
+    // ET tous dans 'tousLivreurs' pour affichage avec statut
     res.status(200).json({
-      success:  true,
-      nombre:   livreursDisponibles.length,
-      livreurs: livreursDisponibles,
+      success:       true,
+      nombre:        livreurs.filter((l) => l.disponible).length,
+      livreurs:      livreurs.filter((l) => l.disponible), // rétrocompat
+      tousLivreurs:  livreurs,                              // avec statut
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

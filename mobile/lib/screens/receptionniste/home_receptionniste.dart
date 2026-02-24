@@ -33,7 +33,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
   List<dynamic> _zones               = [];
   List<dynamic> _livraisonsEnCours   = [];
   List<dynamic> _livraisonsAttente   = [];
-  List<dynamic> _livreursDisponibles = [];
+  List<dynamic> _tousLivreurs        = []; // tous avec statut (pour affichage)
 
   String?       _categorieSelectionnee;
   String?       _zoneSelectionnee;
@@ -114,7 +114,9 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
       final reponse = await ApiService.getLivreursDisponibles();
       if (!mounted) return;
       if (reponse['success'] == true) {
-        setState(() => _livreursDisponibles = reponse['livreurs']);
+        setState(() {
+          _tousLivreurs = reponse['tousLivreurs'] ?? reponse['livreurs'] ?? [];
+        });
       }
     } catch (e) {
       // silencieux — pas bloquant
@@ -755,71 +757,100 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
   Widget _carteLivreurAssigner() {
     return _conteneur(
       titre: '🚴 Assigner un livreur (optionnel)',
-      child: _livreursDisponibles.isEmpty
+      child: _tousLivreurs.isEmpty
           ? const Text(
-              'Aucun livreur disponible pour l\'instant',
+              'Aucun livreur enregistré',
               style: TextStyle(color: Colors.grey),
             )
           : Column(
               children: [
                 const Text(
-                  'Sélectionne un livreur disponible :',
+                  'Sélectionne un livreur :',
                   style: TextStyle(color: Colors.grey, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
-                ..._livreursDisponibles.map((livreur) {
-                  final selectionne =
-                      _livreurSelectionne == livreur['_id'];
+                // ✅ Afficher TOUS les livreurs avec leur statut
+                ..._tousLivreurs.map((livreur) {
+                  final disponible  = livreur['disponible'] as bool? ?? true;
+                  final selectionne = _livreurSelectionne == livreur['_id'];
+
                   return GestureDetector(
-                    onTap: () => setState(
-                        () => _livreurSelectionne = livreur['_id']),
+                    // ✅ Impossible de sélectionner un livreur occupé
+                    onTap: disponible
+                        ? () => setState(() => _livreurSelectionne = livreur['_id'])
+                        : null,
                     child: Container(
                       margin:  const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: selectionne
-                            ? const Color(0xFFF97316)
-                            : const Color(0xFFF1F5F9),
+                        color: !disponible
+                            ? Colors.grey.shade100
+                            : selectionne
+                                ? const Color(0xFFF97316)
+                                : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(10),
+                        border: !disponible
+                            ? Border.all(color: Colors.grey.shade300)
+                            : null,
                       ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius:          16,
-                            backgroundColor: selectionne
-                                ? Colors.white
-                                : const Color(0xFFD1FAE5),
-                            child: Icon(
-                              Icons.delivery_dining,
-                              color: selectionne
-                                  ? const Color(0xFFF97316)
-                                  : const Color(0xFF0D7377),
-                              size: 18,
-                            ),
+                      child: Row(children: [
+                        CircleAvatar(
+                          radius:          16,
+                          backgroundColor: !disponible
+                              ? Colors.grey.shade200
+                              : selectionne
+                                  ? Colors.white
+                                  : const Color(0xFFD1FAE5),
+                          child: Icon(
+                            Icons.delivery_dining,
+                            color: !disponible
+                                ? Colors.grey
+                                : selectionne
+                                    ? const Color(0xFFF97316)
+                                    : const Color(0xFF0D7377),
+                            size: 18,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              livreur['nom'],
-                              style: TextStyle(
-                                color: selectionne
-                                    ? Colors.white
-                                    : Colors.black87,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(livreur['nom'] ?? '',
+                                style: TextStyle(
+                                  color: !disponible
+                                      ? Colors.grey
+                                      : selectionne ? Colors.white : Colors.black87,
+                                  fontWeight: FontWeight.w600,
+                                )),
+                            Text(livreur['telephone'] ?? '',
+                                style: TextStyle(
+                                  color: !disponible
+                                      ? Colors.grey.shade400
+                                      : selectionne ? Colors.white70 : Colors.grey,
+                                  fontSize: 12,
+                                )),
+                          ],
+                        )),
+                        // ✅ Badge statut
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: disponible
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Colors.orange.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          Text(
-                            livreur['telephone'] ?? '',
+                          child: Text(
+                            disponible ? '● Dispo' : '● En mission',
                             style: TextStyle(
-                              color:    selectionne
-                                  ? Colors.white70
-                                  : Colors.grey,
-                              fontSize: 12,
+                              color:      disponible ? Colors.green : Colors.orange,
+                              fontSize:   10,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ]),
                     ),
                   );
                 }),
@@ -925,11 +956,10 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
             Row(
               children: [
                 Expanded(
-                  child: _livreursDisponibles.isEmpty
+                  child: _tousLivreurs.isEmpty
                       ? const Text(
-                          'Aucun livreur dispo',
-                          style: TextStyle(
-                              color: Colors.grey, fontSize: 12),
+                          'Aucun livreur enregistré',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
                         )
                       : DropdownButtonFormField<String>(
                           decoration: InputDecoration(
@@ -944,22 +974,38 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste>
                             'Choisir livreur',
                             style: TextStyle(fontSize: 13),
                           ),
-                          items: _livreursDisponibles
+                          // ✅ Afficher TOUS les livreurs avec statut dans le dropdown
+                          items: _tousLivreurs
                               .map<DropdownMenuItem<String>>(
-                                (l) => DropdownMenuItem(
-                                  value: l['_id'],
-                                  child: Text(
-                                    l['nom'],
-                                    style:
-                                        const TextStyle(fontSize: 13),
-                                  ),
-                                ),
+                                (l) {
+                                  final dispo = l['disponible'] as bool? ?? true;
+                                  return DropdownMenuItem(
+                                    value:   l['_id'],
+                                    enabled: dispo, // ✅ désactivé si en mission
+                                    child: Row(children: [
+                                      Expanded(child: Text(
+                                        l['nom'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: dispo ? Colors.black87 : Colors.grey,
+                                        ),
+                                      )),
+                                      Text(
+                                        dispo ? '● Dispo' : '● Mission',
+                                        style: TextStyle(
+                                          fontSize:   10,
+                                          fontWeight: FontWeight.w600,
+                                          color: dispo ? Colors.green : Colors.orange,
+                                        ),
+                                      ),
+                                    ]),
+                                  );
+                                },
                               )
                               .toList(),
                           onChanged: (livreurId) {
                             if (livreurId != null) {
-                              _assignerLivreur(
-                                  livraison['_id'], livreurId);
+                              _assignerLivreur(livraison['_id'], livreurId);
                             }
                           },
                         ),
