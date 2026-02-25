@@ -31,15 +31,15 @@ class AuthProvider extends ChangeNotifier {
       final settings = await FirebaseMessaging.instance.requestPermission(
         alert: true, badge: true, sound: true, provisional: false,
       );
-            if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
           settings.authorizationStatus != AuthorizationStatus.provisional) {
         return;
       }
-
       final fcmToken = await FirebaseMessaging.instance.getToken();
       if (fcmToken == null) return;
       await ApiService.sauvegarderTokenFCM(fcmToken);
-      FirebaseMessaging.instance.onTokenRefresh.listen(ApiService.sauvegarderTokenFCM);
+      FirebaseMessaging.instance.onTokenRefresh
+          .listen(ApiService.sauvegarderTokenFCM);
     } catch (e) {
       debugPrint('❌ Erreur FCM : $e');
     }
@@ -82,7 +82,8 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     _setErreur(null);
     try {
-      final r = await ApiService.login(email: email, motDePasse: motDePasse);
+      final r = await ApiService.login(
+          email: email, motDePasse: motDePasse);
       if (r['success'] == true) {
         await _sauvegarderSession(r);
         return true;
@@ -116,14 +117,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ─── Restaurer la session au démarrage ───────────────────────────────────
-  // ✅ LOGIQUE EN 2 ÉTAPES :
-  // Étape 1 — Restauration instantanée depuis cache local
-  //   → L'utilisateur voit son interface sans attendre le réseau
-  //   → Plus de déconnexion forcée à chaque fermeture d'app
-  // Étape 2 — Vérification en arrière-plan
-  //   → Token valide  → données fraîches du serveur
-  //   → Token expiré  → déconnexion propre
-  //   → Pas de réseau → session locale conservée
   Future<void> restaurerSession() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
@@ -140,11 +133,8 @@ class AuthProvider extends ChangeNotifier {
 
     if (id.isNotEmpty && nom.isNotEmpty) {
       _user = User(
-        id:        id,
-        nom:       nom,
-        email:     email,
-        role:      role,
-        telephone: tel,
+        id: id, nom: nom, email: email,
+        role: role, telephone: tel,
       );
       SocketService.connecter(_token!);
       notifyListeners();
@@ -154,6 +144,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final reponse = await ApiService.moi();
       if (reponse['success'] == true) {
+        // ✅ User.fromJson — pas UserModel
         _user = User.fromJson(reponse['user']);
         await prefs.setString('userNom',   _user!.nom);
         await prefs.setString('userEmail', _user!.email);
@@ -161,13 +152,24 @@ class AuthProvider extends ChangeNotifier {
         await _enregistrerTokenFCM();
         notifyListeners();
       } else {
-        // Token expiré ou invalide
         await deconnecter();
       }
     } catch (e) {
-      // Pas de réseau → on garde la session locale
       debugPrint('⚠️ Vérification session : pas de réseau ($e)');
     }
+  }
+
+  // ─── Rafraîchir le profil après modification ──────────────────────────────
+  // ✅ Utilisé par ProfilScreen après modif nom/photo/mdp
+  Future<void> rafraichirProfil() async {
+    try {
+      final reponse = await ApiService.moi();
+      if (reponse['success'] == true) {
+        // ✅ User.fromJson — pas UserModel
+        _user = User.fromJson(reponse['user']);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   // ─── DÉCONNEXION ─────────────────────────────────────────────────────────

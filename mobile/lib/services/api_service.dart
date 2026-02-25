@@ -75,6 +75,54 @@ class ApiService {
     }
   }
 
+  // ─── PROFIL ───────────────────────────────────────────────────────────────
+  static Future<Map<String, dynamic>> mettreAJourProfil({
+    String? nom,
+    String? telephone,
+    String? photoBase64,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (nom         != null) body['nom']          = nom;
+      if (telephone   != null) body['telephone']    = telephone;
+      if (photoBase64 != null) body['photo_base64'] = photoBase64;
+
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/profil'),
+            headers: await _headers(),
+            body:    jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 20));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> changerMotDePasse({
+    required String ancienMdp,
+    required String nouveauMdp,
+  }) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/profil/mot-de-passe'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'ancien_mdp':  ancienMdp,
+              'nouveau_mdp': nouveauMdp,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+
+
   static Future<Map<String, dynamic>> login({
     required String email,
     required String motDePasse,

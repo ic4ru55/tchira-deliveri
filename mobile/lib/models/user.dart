@@ -4,6 +4,7 @@ class User {
   final String email;
   final String role;
   final String telephone;
+  final String? photoBase64;
 
   User({
     required this.id,
@@ -11,6 +12,7 @@ class User {
     required this.email,
     required this.role,
     required this.telephone,
+    this.photoBase64,
   });
 
   // Créer un User depuis un JSON (réponse de l'API)
@@ -21,6 +23,7 @@ class User {
       email:     json['email'] ?? '',
       role:      json['role'] ?? 'client',
       telephone: json['telephone'] ?? '',
+      photoBase64: json['photo_base64'] as String?,
     );
   }
 

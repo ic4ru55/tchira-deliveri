@@ -232,6 +232,7 @@ class _HomeAdminState extends State<HomeAdmin>
       SnackBar(content: Text(msg), backgroundColor: couleur),
     );
   }
+  
 
   Future<void> _deconnecter() async {
     await context.read<AuthProvider>().deconnecter();
