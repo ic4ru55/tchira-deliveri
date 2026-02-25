@@ -1,6 +1,13 @@
-const Delivery = require('../models/Delivery');
-const User     = require('../models/User');
+const Delivery            = require('../models/Delivery');
+const User                = require('../models/User');
 const { envoyerNotification } = require('../services/firebaseService');
+
+// Helper : envoie notif sans bloquer la requête principale
+const notifier = async (fcmToken, titre, corps, donnees = {}) => {
+  if (!fcmToken) return;
+  try { await envoyerNotification({ fcmToken, titre, corps, donnees }); }
+  catch (_) {}
+};
 
 // ─── CRÉER une livraison ──────────────────────────────────────────────────────
 exports.creerLivraison = async (req, res) => {
@@ -31,14 +38,16 @@ exports.creerLivraison = async (req, res) => {
 
     await livraison.populate('client', 'nom email telephone');
 
-    const livreurs = await User.find({ role: 'livreur', actif: true, fcm_token: { $ne: null } });
-    for (const livreur of livreurs) {
-      await envoyerNotification({
-        fcmToken: livreur.fcm_token,
-        titre:    '📦 Nouvelle mission disponible !',
-        corps:    `${adresse_depart} → ${adresse_arrivee} — ${prix} FCFA`,
-        donnees:  { type: 'nouvelle_livraison', livraison_id: livraison._id.toString() },
-      });
+    // Notifier tous les livreurs actifs avec un token FCM
+    const livreurs = await User.find({
+      role: 'livreur', actif: true, fcm_token: { $ne: null },
+    });
+    for (const l of livreurs) {
+      await notifier(l.fcm_token,
+        '📦 Nouvelle mission disponible !',
+        `${adresse_depart} → ${adresse_arrivee} — ${prix} FCFA`,
+        { type: 'nouvelle_livraison', livraison_id: livraison._id.toString() }
+      );
     }
 
     res.status(201).json({ success: true, livraison });
@@ -82,13 +91,10 @@ exports.toutesLesLivraisons = async (req, res) => {
   }
 };
 
-// ─── STATISTIQUES avec filtre date (admin) ───────────────────────────────────
-// GET /api/livraisons/stats          → stats globales
-// GET /api/livraisons/stats?date=2026-02-23 → stats du jour
+// ─── STATISTIQUES (admin) ─────────────────────────────────────────────────────
 exports.getStats = async (req, res) => {
   try {
     const { date } = req.query;
-
     let filtreDate = {};
     if (date) {
       const debut = new Date(date); debut.setHours(0,  0,  0,   0);
@@ -103,14 +109,12 @@ exports.getStats = async (req, res) => {
     const livrees     = await Delivery.countDocuments({ ...filtreDate, statut: 'livre' });
     const annulees    = await Delivery.countDocuments({ ...filtreDate, statut: 'annule' });
 
-    // CA selon filtre (date ou tout)
     const resultatCA = await Delivery.aggregate([
       { $match: { ...filtreDate, statut: 'livre' } },
       { $group: { _id: null, total: { $sum: '$prix' } } },
     ]);
     const chiffreAffaires = resultatCA[0]?.total || 0;
 
-    // CA aujourd'hui (toujours affiché)
     const aujourd = new Date(); aujourd.setHours(0, 0, 0, 0);
     const resultatCAJour = await Delivery.aggregate([
       { $match: { statut: 'livre', createdAt: { $gte: aujourd } } },
@@ -118,7 +122,6 @@ exports.getStats = async (req, res) => {
     ]);
     const caAujourdhui = resultatCAJour[0]?.total || 0;
 
-    // CA total tous les temps
     const resultatCATotal = await Delivery.aggregate([
       { $match: { statut: 'livre' } },
       { $group: { _id: null, total: { $sum: '$prix' } } },
@@ -153,8 +156,7 @@ exports.mesLivraisons = async (req, res) => {
   }
 };
 
-// ─── HISTORIQUE DU LIVREUR CONNECTÉ ──────────────────────────────────────────
-// GET /api/livraisons/mon-historique
+// ─── HISTORIQUE DU LIVREUR ────────────────────────────────────────────────────
 exports.monHistorique = async (req, res) => {
   try {
     const livraisons = await Delivery
@@ -195,10 +197,15 @@ exports.getLivraison = async (req, res) => {
   }
 };
 
-// ─── ACCEPTER une livraison (livreur) ────────────────────────────────────────
+// ─── ACCEPTER une livraison (livreur) ─────────────────────────────────────────
+// ✅ FIX RACE CONDITION "mission non disponible" :
+// findById() + save() N'EST PAS ATOMIQUE → deux livreurs peuvent passer
+// le if (statut !== 'en_attente') en même temps et tous les deux accepter.
+// findOneAndUpdate() avec condition { statut:'en_attente', livreur:null }
+// est ATOMIQUE → MongoDB garantit qu'un seul livreur gagne.
 exports.accepterLivraison = async (req, res) => {
   try {
-    // Vérifier que le livreur n'a pas déjà une mission active
+    // Vérifier d'abord que le livreur n'a pas déjà une mission active
     const dejaOccupe = await Delivery.findOne({
       livreur: req.user.id,
       statut:  { $in: ['en_cours', 'en_livraison'] },
@@ -210,29 +217,36 @@ exports.accepterLivraison = async (req, res) => {
       });
     }
 
-    let livraison = await Delivery.findById(req.params.id);
+    // Opération ATOMIQUE : la condition garantit qu'un seul livreur gagne
+    const livraison = await Delivery.findOneAndUpdate(
+      {
+        _id:    req.params.id,
+        statut: 'en_attente',
+        livreur: null,          // ← clé : uniquement si pas encore pris
+      },
+      {
+        $set: { livreur: req.user.id, statut: 'en_cours' },
+      },
+      { new: true }
+    )
+    .populate('client',  'nom telephone fcm_token')
+    .populate('livreur', 'nom telephone');
+
     if (!livraison) {
-      return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    }
-    if (livraison.statut !== 'en_attente') {
-      return res.status(400).json({ success: false, message: "Cette livraison n'est plus disponible" });
-    }
-
-    livraison.livreur = req.user.id;
-    livraison.statut  = 'en_cours';
-    await livraison.save();
-
-    await livraison.populate('client',  'nom telephone fcm_token');
-    await livraison.populate('livreur', 'nom telephone');
-
-    if (livraison.client?.fcm_token) {
-      await envoyerNotification({
-        fcmToken: livraison.client.fcm_token,
-        titre:    '🚴 Livreur assigné !',
-        corps:    `${livraison.livreur.nom} prend en charge votre livraison`,
-        donnees:  { type: 'livreur_assigne', livraison_id: livraison._id.toString() },
+      // Soit introuvable, soit déjà prise par un autre livreur
+      return res.status(400).json({
+        success: false,
+        message: "Cette mission n'est plus disponible",
       });
     }
+
+    // Notifier le client
+    await notifier(
+      livraison.client?.fcm_token,
+      '🚴 Livreur assigné !',
+      `${livraison.livreur.nom} prend en charge votre livraison`,
+      { type: 'livreur_assigne', livraison_id: livraison._id.toString() }
+    );
 
     res.status(200).json({ success: true, livraison });
   } catch (error) {
@@ -268,23 +282,16 @@ exports.assignerLivreur = async (req, res) => {
     await livraison.populate('client',  'nom telephone fcm_token');
     await livraison.populate('livreur', 'nom telephone fcm_token');
 
-    if (livraison.client?.fcm_token) {
-      await envoyerNotification({
-        fcmToken: livraison.client.fcm_token,
-        titre:    '🚴 Livreur assigné !',
-        corps:    `${livreur.nom} prend en charge votre livraison`,
-        donnees:  { type: 'livreur_assigne', livraison_id: livraison._id.toString() },
-      });
-    }
-
-    if (livreur.fcm_token) {
-      await envoyerNotification({
-        fcmToken: livreur.fcm_token,
-        titre:    '📋 Mission assignée !',
-        corps:    `Nouvelle mission : ${livraison.adresse_depart} → ${livraison.adresse_arrivee}`,
-        donnees:  { type: 'mission_assignee', livraison_id: livraison._id.toString() },
-      });
-    }
+    await notifier(livraison.client?.fcm_token,
+      '🚴 Livreur assigné !',
+      `${livreur.nom} prend en charge votre livraison`,
+      { type: 'livreur_assigne', livraison_id: livraison._id.toString() }
+    );
+    await notifier(livreur.fcm_token,
+      '📋 Mission assignée !',
+      `Nouvelle mission : ${livraison.adresse_depart} → ${livraison.adresse_arrivee}`,
+      { type: 'mission_assignee', livraison_id: livraison._id.toString() }
+    );
 
     res.status(200).json({ success: true, livraison });
   } catch (error) {
@@ -327,15 +334,11 @@ exports.mettreAJourStatut = async (req, res) => {
       'livre':        { titre: '✅ Colis livré !',         corps: 'Votre colis a été livré avec succès. Merci !' },
       'annule':       { titre: '❌ Livraison annulée',     corps: 'Votre livraison a été annulée' },
     };
-
     const notif = messagesStatut[statut];
-    if (notif && client?.fcm_token) {
-      await envoyerNotification({
-        fcmToken: client.fcm_token,
-        titre:    notif.titre,
-        corps:    notif.corps,
-        donnees:  { type: 'statut_change', statut, livraison_id: livraison._id.toString() },
-      });
+    if (notif) {
+      await notifier(client?.fcm_token, notif.titre, notif.corps,
+        { type: 'statut_change', statut, livraison_id: livraison._id.toString() }
+      );
     }
 
     res.status(200).json({ success: true, livraison });
@@ -402,17 +405,13 @@ exports.annulerLivraison = async (req, res) => {
     livraison.statut = 'annule';
     await livraison.save();
 
-    // ✅ Notifier le client si c'est la réceptionniste ou l'admin qui annule
     if (req.user.role === 'receptionniste' || req.user.role === 'admin') {
-      const client = await User.findById(livraison.client).select('fcm_token nom');
-      if (client?.fcm_token) {
-        await envoyerNotification({
-          fcmToken: client.fcm_token,
-          titre:    '❌ Livraison annulée',
-          corps:    `Votre livraison de ${livraison.adresse_depart} vers ${livraison.adresse_arrivee} a été annulée.`,
-          donnees:  { type: 'statut_change', statut: 'annule', livraison_id: livraison._id.toString() },
-        });
-      }
+      const client = await User.findById(livraison.client).select('fcm_token');
+      await notifier(client?.fcm_token,
+        '❌ Livraison annulée',
+        `Votre livraison de ${livraison.adresse_depart} vers ${livraison.adresse_arrivee} a été annulée.`,
+        { type: 'statut_change', statut: 'annule', livraison_id: livraison._id.toString() }
+      );
     }
 
     res.status(200).json({ success: true, message: 'Livraison annulée' });
@@ -421,39 +420,33 @@ exports.annulerLivraison = async (req, res) => {
   }
 };
 
-// ─── TOUS LES LIVREURS avec leur statut (dispo / en mission) ─────────────────
-// Utilisé par la réceptionniste pour voir qui est libre
+// ─── LIVREURS DISPONIBLES ─────────────────────────────────────────────────────
 exports.getLivreursDisponibles = async (req, res) => {
   try {
-    // IDs des livreurs actuellement en mission
     const livreursOccupes = await Delivery.distinct('livreur', {
       statut:  { $in: ['en_cours', 'en_livraison'] },
       livreur: { $ne: null },
     });
 
-    // Tous les livreurs actifs
     const tousLivreurs = await User.find({ role: 'livreur' })
-      .select('nom telephone email');
+      .select('nom telephone email actif');
 
-    // Enrichir avec le statut
     const livreurs = tousLivreurs.map((l) => ({
-      _id:       l._id,
-      nom:       l.nom,
-      telephone: l.telephone,
-      email:     l.email,
-      // ✅ statut calculé selon si l'ID est dans la liste des occupés
-      disponible: !livreursOccupes.some(
+      _id:        l._id,
+      nom:        l.nom,
+      telephone:  l.telephone,
+      email:      l.email,
+      actif:      l.actif,
+      disponible: l.actif && !livreursOccupes.some(
         (id) => id && id.toString() === l._id.toString()
       ),
     }));
 
-    // Pour compatibilité : livreurs filtrés (seulement dispos) dans 'livreurs'
-    // ET tous dans 'tousLivreurs' pour affichage avec statut
     res.status(200).json({
-      success:       true,
-      nombre:        livreurs.filter((l) => l.disponible).length,
-      livreurs:      livreurs.filter((l) => l.disponible), // rétrocompat
-      tousLivreurs:  livreurs,                              // avec statut
+      success:      true,
+      nombre:       livreurs.filter((l) => l.disponible).length,
+      livreurs:     livreurs.filter((l) => l.disponible),
+      tousLivreurs: livreurs,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
