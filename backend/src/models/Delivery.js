@@ -3,27 +3,27 @@ const mongoose = require('mongoose');
 const DeliverySchema = new mongoose.Schema(
   {
     client: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      'User',
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
     },
 
     livreur: {
-      type:    mongoose.Schema.Types.ObjectId,
-      ref:     'User',
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       default: null,
     },
 
     adresse_depart: {
-      type:     String,
-      required: [true, 'L\'adresse de départ est obligatoire'],
-      trim:     true,
+      type: String,
+      required: [true, "L'adresse de départ est obligatoire"],
+      trim: true,
     },
 
     adresse_arrivee: {
-      type:     String,
-      required: [true, 'L\'adresse d\'arrivée est obligatoire'],
-      trim:     true,
+      type: String,
+      required: [true, "L'adresse d'arrivée est obligatoire"],
+      trim: true,
     },
 
     coordonnees_depart: {
@@ -37,51 +37,52 @@ const DeliverySchema = new mongoose.Schema(
     },
 
     categorie_colis: {
-      type:    String,
-      enum:    ['leger', 'moyen', 'lourd', 'tres_lourd'],
+      type: String,
+      enum: ['leger', 'moyen', 'lourd', 'tres_lourd'],
       default: 'leger',
     },
 
     zone: {
-      type:    String,
-      enum:    ['zone_1', 'zone_2', 'zone_3'],
+      type: String,
+      enum: ['zone_1', 'zone_2', 'zone_3'],
       default: 'zone_1',
     },
 
     description_colis: {
-      type:    String,
+      type: String,
       default: '',
-      trim:    true,
+      trim: true,
     },
-    // Pour les commandes passées par téléphone via réceptionniste
-      client_nom_tel: {
-        type:    String,
-        default: '',
-      },
 
-      client_telephone_tel: {
-        type:    String,
-        default: '',
-      },
+    // Commande passée par téléphone (réceptionniste)
+    client_nom_tel: {
+      type: String,
+      default: '',
+    },
+
+    client_telephone_tel: {
+      type: String,
+      default: '',
+    },
 
     statut: {
-      type:    String,
-      enum:    ['en_attente', 'en_cours', 'en_livraison', 'livre', 'annule'],
+      type: String,
+      enum: ['en_attente', 'en_cours', 'en_livraison', 'livre', 'annule'],
       default: 'en_attente',
     },
 
     prix_base: {
-      type:    Number,
+      type: Number,
       default: 0,
     },
 
     frais_zone: {
-      type:    Number,
+      type: Number,
       default: 0,
     },
 
     prix: {
-      type:    Number,
+      type: Number,
       default: 0,
     },
 

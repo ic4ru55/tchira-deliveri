@@ -6,11 +6,6 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// 📚 Kotlin DSL — syntaxe différente du Groovy :
-// Groovy : def, single quotes '  ', new Properties()
-// Kotlin  : val, double quotes "  ", Properties()
-// C'est la même logique, juste un autre langage
-
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -25,6 +20,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // ✅ Requis pour flutter_local_notifications (APIs Java 8+ sur anciens Android)
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -40,7 +37,6 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // ✅ Kotlin DSL : guillemets doubles et [] fonctionne pareil
         manifestPlaceholders["mapsApiKey"] =
             localProperties.getProperty("MAPS_API_KEY", "")
     }
@@ -54,6 +50,11 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // ✅ Requis pour le core library desugaring (flutter_local_notifications)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 apply(plugin = "com.google.gms.google-services")

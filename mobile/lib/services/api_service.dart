@@ -294,6 +294,24 @@ class ApiService {
     }
   }
 
+// ✅ Mission active du livreur connecté
+static Future<Map<String, dynamic>> missionActiveLivreur() async {
+  try {
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/livraisons/mission-active'),
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    return _handleResponse(response);
+  } catch (e) {
+    return {'success': false, 'message': 'Connexion impossible'};
+  }
+}
+
+
+
   // ✅ Historique des livraisons du livreur connecté
   static Future<Map<String, dynamic>> mesLivraisonsLivreur() async {
     try {

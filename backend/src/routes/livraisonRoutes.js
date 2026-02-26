@@ -1,5 +1,6 @@
 const express = require('express');
-const router  = express.Router();
+const router = express.Router();
+
 const {
   creerLivraison,
   getLivraisonsDisponibles,
@@ -14,21 +15,32 @@ const {
   modifierLivraison,
   annulerLivraison,
   getLivreursDisponibles,
+  missionActive // ✅ AJOUT IMPORTANT
 } = require('../controllers/livraisonController');
+
 const { proteger, autoriser } = require('../middleware/auth');
 
+
 // ── Routes spécifiques — AVANT /:id ──────────────────────────────────────────
+
 router.get('/mes',
   proteger,
   autoriser('client'),
   mesLivraisons
 );
 
-// ✅ Historique du livreur connecté
+// Historique du livreur connecté
 router.get('/mon-historique',
   proteger,
   autoriser('livreur'),
   monHistorique
+);
+
+// Mission active du livreur connecté
+router.get('/mission-active',
+  proteger,
+  autoriser('livreur'),
+  missionActive
 );
 
 router.get('/toutes',
@@ -49,7 +61,9 @@ router.get('/livreurs-disponibles',
   getLivreursDisponibles
 );
 
-// ── CRUD principal ────────────────────────────────────────────────────────────
+
+// ── CRUD principal ─────────────────────────────────────────────
+
 router.post('/',
   proteger,
   autoriser('client', 'receptionniste'),
