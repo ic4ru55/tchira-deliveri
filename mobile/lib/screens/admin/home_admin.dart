@@ -115,7 +115,35 @@ class _HomeAdminState extends State<HomeAdmin> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final pages = [_ongletDashboard(), _ongletComptes(), _ongletLivraisons(), _ongletTarifs(), _pageProfil(auth)];
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_ongletActif != 0) {
+          setState(() => _ongletActif = 0);
+          return;
+        }
+        final quitter = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Quitter Tchira ?', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text("Voulez-vous vraiment quitter l'application ?"),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B3A6B), foregroundColor: Colors.white),
+                child: const Text('Quitter'),
+              ),
+            ],
+          ),
+        );
+        if (quitter == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: pages[_ongletActif],
       bottomNavigationBar: _navbar(),
@@ -126,6 +154,7 @@ class _HomeAdminState extends State<HomeAdmin> {
               icon: Icon(_formUserVisible ? Icons.close : Icons.person_add),
               label: Text(_formUserVisible ? 'Annuler' : 'Nouveau compte'))
           : null,
+    ),
     );
   }
 

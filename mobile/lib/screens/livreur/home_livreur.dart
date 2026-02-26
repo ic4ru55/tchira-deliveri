@@ -27,8 +27,11 @@ class _HomeLibreurState extends State<HomeLibreur> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LivraisonProvider>().chargerLivraisonsDisponibles();
-      context.read<LivraisonProvider>().chargerMissionActive();
+      final provider = context.read<LivraisonProvider>();
+      provider.chargerLivraisonsDisponibles();
+      provider.chargerMissionActive();
+      // ✅ Reprendre le GPS auto si mission en cours (ex: retour depuis MissionScreen)
+      _reprendreGpsAuto();
       _timer = Timer.periodic(const Duration(seconds: 5), (_) {
         if (mounted && _ongletActif == 0) {
           context.read<LivraisonProvider>().chargerLivraisonsDisponibles(silencieux: true);
@@ -39,6 +42,16 @@ class _HomeLibreurState extends State<HomeLibreur> {
 
   @override
   void dispose() { _timer?.cancel(); super.dispose(); }
+
+  // ─── Reprendre GPS si mission déjà active ──────────────────────────────────
+  Future<void> _reprendreGpsAuto() async {
+    final livraison = context.read<LivraisonProvider>().livraisonActive;
+    if (livraison == null) return;
+    if (livraison.statut == 'en_cours' || livraison.statut == 'en_livraison') {
+      await GpsService.instance.demarrer(livraison.id);
+      if (mounted) setState(() {});
+    }
+  }
 
   Future<void> _chargerHistorique() async {
     setState(() => _chargementHistorique = true);
@@ -54,13 +67,31 @@ class _HomeLibreurState extends State<HomeLibreur> {
     final provider  = context.read<LivraisonProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final succes    = await provider.accepterLivraison(id);
+
+    // ✅ Compatibilité : le provider peut retourner Map OU bool selon la version
+    final dynamic retour = await provider.accepterLivraison(id);
     if (!mounted) return;
+
+    bool succes;
+    String msg = '❌ Mission non disponible';
+
+    if (retour is bool) {
+      // Ancienne signature : Future<bool>
+      succes = retour;
+    } else if (retour is Map) {
+      // Nouvelle signature : Future<Map<String, dynamic>>
+      succes = retour['succes'] == true;
+      msg    = (retour['message'] as String?) ?? msg;
+    } else {
+      succes = false;
+    }
+
     if (succes) {
       messenger.showSnackBar(const SnackBar(content: Text('✅ Mission acceptée !'), backgroundColor: Colors.green));
+      await GpsService.instance.demarrer(id);
       navigator.push(MaterialPageRoute(builder: (_) => const MissionScreen()));
     } else {
-      messenger.showSnackBar(const SnackBar(content: Text('❌ Mission non disponible'), backgroundColor: Colors.red));
+      messenger.showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
     }
   }
 
@@ -82,10 +113,39 @@ class _HomeLibreurState extends State<HomeLibreur> {
       _pageProfil(auth),
     ];
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      body: pages[_ongletActif],
-      bottomNavigationBar: _navbar(missionEnCours),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_ongletActif != 0) {
+          setState(() => _ongletActif = 0);
+          return;
+        }
+        final quitter = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Quitter Tchira ?', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text("Voulez-vous vraiment quitter l'application ?"),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B3A6B), foregroundColor: Colors.white),
+                child: const Text('Quitter'),
+              ),
+            ],
+          ),
+        );
+        if (quitter == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: pages[_ongletActif],
+        bottomNavigationBar: _navbar(missionEnCours),
+      ),
     );
   }
 
@@ -137,7 +197,12 @@ class _HomeLibreurState extends State<HomeLibreur> {
     return Column(children: [
       if (missionEnCours)
         GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MissionScreen())),
+          onTap: () async {
+              final livraison = context.read<LivraisonProvider>().livraisonActive;
+              if (livraison != null) { await GpsService.instance.demarrer(livraison.id); }
+              if (!mounted) return;
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const MissionScreen()));
+            },
           child: Container(
             margin: const EdgeInsets.only(top: 0),
             padding: const EdgeInsets.fromLTRB(20, 52, 20, 14),

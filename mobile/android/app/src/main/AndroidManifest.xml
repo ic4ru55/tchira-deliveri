@@ -82,7 +82,29 @@
             android:value="2"/>
     </application>
 
+    <!-- ✅ AJOUT : nécessaire pour url_launcher (ouvre Google Maps itinéraires) -->
+    <!-- Sans ce bloc, canLaunchUrl() retourne false sur Android 11+ (API 30+) -->
     <queries>
+        <!-- Liens https/http — Google Maps itinéraires web -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+        <!-- Google Maps app natif (geo: scheme) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <!-- Appels téléphoniques (bouton appel depuis suivi) -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <!-- Sélection de texte (déjà présent dans ta version) -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

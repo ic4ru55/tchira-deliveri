@@ -38,8 +38,7 @@ class TchiraApp extends StatelessWidget {
         title:                      'Tchira Express',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF0D7377)),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0D7377)),
           useMaterial3: true,
         ),
         home: const SplashDecision(),
@@ -48,9 +47,13 @@ class TchiraApp extends StatelessWidget {
   }
 }
 
+// ─── SplashDecision ────────────────────────────────────────────────────────────
+// Logique de démarrage :
+// 1. Onboarding jamais vu → OnboardingScreen (1 seule fois à l'installation)
+// 2. Token présent + session valide → HomeScreen du rôle (sans redemander login)
+// 3. Pas de token → LoginScreen
 class SplashDecision extends StatefulWidget {
   const SplashDecision({super.key});
-
   @override
   State<SplashDecision> createState() => _SplashDecisionState();
 }
@@ -63,46 +66,37 @@ class _SplashDecisionState extends State<SplashDecision> {
   }
 
   Future<void> _decider() async {
-    // ✅ Capturer TOUT ce qui vient de context AVANT le premier await
-    final prefs    = await SharedPreferences.getInstance();
-    // ignore: use_build_context_synchronously
+    final prefs     = await SharedPreferences.getInstance();
     if (!mounted) return;
-    final auth     = context.read<AuthProvider>();
+    final auth      = context.read<AuthProvider>();
     final navigator = Navigator.of(context);
 
-    // ── Onboarding jamais vu ──
+    // ── 1. Onboarding vu pour la première fois ? ──────────────────────────
     final onboardingVu = prefs.getBool('onboarding_vu') ?? false;
     if (!onboardingVu) {
-      if (!mounted) return;
       navigator.pushReplacement(
           MaterialPageRoute(builder: (_) => const OnboardingScreen()));
       return;
     }
 
-    // ── Restaurer la session ──
+    // ── 2. Restaurer la session (token + profil depuis prefs + vérif serveur) ──
     await auth.restaurerSession();
     if (!mounted) return;
 
+    // ── 3. Pas connecté → Login ───────────────────────────────────────────
     if (!auth.estConnecte) {
       navigator.pushReplacement(
           MaterialPageRoute(builder: (_) => const LoginScreen()));
       return;
     }
 
-    // ── Rediriger selon le rôle ──
+    // ── 4. Connecté → écran selon le rôle, sans passer par Login ─────────
     Widget ecran;
     switch (auth.user?.role) {
-      case 'admin':
-        ecran = const HomeAdmin();
-        break;
-      case 'livreur':
-        ecran = const HomeLibreur();
-        break;
-      case 'receptionniste':
-        ecran = const HomeReceptionniste();
-        break;
-      default:
-        ecran = const HomeClient();
+      case 'admin':          ecran = const HomeAdmin();           break;
+      case 'livreur':        ecran = const HomeLibreur();         break;
+      case 'receptionniste': ecran = const HomeReceptionniste();  break;
+      default:               ecran = const HomeClient();
     }
 
     if (!mounted) return;
@@ -111,6 +105,7 @@ class _SplashDecisionState extends State<SplashDecision> {
 
   @override
   Widget build(BuildContext context) {
+    // Écran de chargement pendant la décision
     return const Scaffold(
       backgroundColor: Color(0xFF0D7377),
       body: Center(
@@ -121,10 +116,7 @@ class _SplashDecisionState extends State<SplashDecision> {
             SizedBox(height: 16),
             Text('Tchira Express',
                 style: TextStyle(
-                  color:      Colors.white,
-                  fontSize:   24,
-                  fontWeight: FontWeight.bold,
-                )),
+                  color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
             SizedBox(height: 32),
             CircularProgressIndicator(color: Colors.white70),
           ],

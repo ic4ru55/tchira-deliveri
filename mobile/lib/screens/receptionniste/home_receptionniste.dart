@@ -90,9 +90,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
         if (_livreurSelectionne != null && provider.mesLivraisons.isNotEmpty) await ApiService.assignerLivreur(livraisonId: provider.mesLivraisons.first.id, livreurId: _livreurSelectionne!);
         _viderFormulaire(); messenger.showSnackBar(const SnackBar(content: Text('✅ Commande créée !'), backgroundColor: Colors.green));
         setState(() => _ongletActif = 1); if (mounted) _chargerLivraisons();
-      } else {
-        messenger.showSnackBar(const SnackBar(content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
-      }
+      } else messenger.showSnackBar(const SnackBar(content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
     } finally { if (mounted) setState(() => _creationEnCours = false); }
   }
 
@@ -101,9 +99,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
     try { final r = await ApiService.assignerLivreur(livraisonId: livId, livreurId: livreurId);
       if (!mounted) return;
       if (r['success'] == true) { messenger.showSnackBar(const SnackBar(content: Text('✅ Livreur assigné !'), backgroundColor: Colors.green)); _chargerLivraisons(); _chargerLivreursDisponibles(); }
-      else {
-        messenger.showSnackBar(SnackBar(content: Text(r['message'] ?? 'Erreur'), backgroundColor: Colors.red));
-      }
+      else messenger.showSnackBar(SnackBar(content: Text(r['message'] ?? 'Erreur'), backgroundColor: Colors.red));
     } catch (_) { messenger.showSnackBar(const SnackBar(content: Text('Erreur réseau'), backgroundColor: Colors.red)); }
   }
 
@@ -122,7 +118,35 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final pages = [_pageCommandes(), _pageEnCours(), _pageProfil(auth)];
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_ongletActif != 0) {
+          setState(() => _ongletActif = 0);
+          return;
+        }
+        final quitter = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Quitter Tchira ?', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text("Voulez-vous vraiment quitter l'application ?"),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D7377), foregroundColor: Colors.white),
+                child: const Text('Quitter'),
+              ),
+            ],
+          ),
+        );
+        if (quitter == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: pages[_ongletActif],
       bottomNavigationBar: _navbar(),
@@ -133,6 +157,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
               icon: Icon(_formVisible ? Icons.close : Icons.add),
               label: Text(_formVisible ? 'Annuler' : 'Nouvelle commande'))
           : null,
+    ),
     );
   }
 
@@ -285,7 +310,6 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
 
   Widget _cartePrix() {
     if (_calculEnCours) return const Center(child: CircularProgressIndicator());
-    // ignore: curly_braces_in_flow_control_structures
     if (_surDevis) return Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFFFEF9C3), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFF59E0B))),
         child: const Row(children: [Icon(Icons.info_outline, color: Color(0xFFF59E0B)), SizedBox(width: 10), Expanded(child: Text('Ce colis nécessite un devis. Contactez l\'admin.', style: TextStyle(color: Color(0xFF92400E))))]));
     return Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF0D7377))),

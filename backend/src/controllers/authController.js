@@ -4,14 +4,15 @@ const User = require('../models/User');
 const genererToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 
 // ─── Normaliser numéro Burkina ─────────────────────────────────────────────────
-// Accepte: "76123456", "+22676123456", "0022676123456"
-// Retourne: "+22676123456" ou null si invalide
+// Accepte TOUTES les variantes : "76123456", "+22676123456", "0022676123456"
+// Retourne TOUJOURS "+22676123456" ou null si invalide
 const normaliserTelephone = (tel) => {
   if (!tel) return null;
   let t = tel.toString().trim().replace(/[\s\-().]/g, '');
-  if (t.startsWith('+226'))      { t = t.slice(4); }
-  else if (t.startsWith('00226')){ t = t.slice(5); }
-  else if (t.startsWith('226') && t.length === 11) { t = t.slice(3); }
+  if      (t.startsWith('+226'))                    { t = t.slice(4);  }
+  else if (t.startsWith('00226'))                   { t = t.slice(5);  }
+  else if (t.startsWith('226') && t.length === 11)  { t = t.slice(3);  }
+  // t doit maintenant être exactement 8 chiffres
   if (!/^\d{8}$/.test(t)) return null;
   return `+226${t}`;
 };
@@ -37,7 +38,11 @@ exports.register = async (req, res) => {
     }
 
     const user = await User.create({
-      nom, email: email.toLowerCase(), mot_de_passe, telephone: telNormalise, role: role || 'client',
+      nom,
+      email:      email.toLowerCase(),
+      mot_de_passe,
+      telephone:  telNormalise,
+      role:       role || 'client',
     });
 
     const token = genererToken(user._id);
@@ -51,21 +56,40 @@ exports.register = async (req, res) => {
 };
 
 // ─── LOGIN : email OU téléphone ────────────────────────────────────────────────
+// ✅ FIX : cherche le numéro avec ET sans +226 pour compatibilité
+// avec les anciens comptes créés avant la normalisation
 exports.login = async (req, res) => {
   try {
     const { email: identifiant, mot_de_passe } = req.body;
+
     if (!identifiant || !mot_de_passe) {
       return res.status(400).json({ success: false, message: 'Identifiant et mot de passe requis' });
     }
 
     let user = null;
-    // Si pas de @, c'est un numéro de téléphone
+
     if (!identifiant.includes('@')) {
+      // ─── Login par téléphone ───────────────────────────────────────────
       const telNormalise = normaliserTelephone(identifiant);
+
       if (telNormalise) {
+        // Chercher avec +226 (format normalisé — nouveaux comptes)
         user = await User.findOne({ telephone: telNormalise }).select('+mot_de_passe');
+
+        // ✅ Si pas trouvé, chercher sans +226 (anciens comptes)
+        if (!user) {
+          const telSans226 = telNormalise.replace('+226', ''); // "76XXXXXX"
+          user = await User.findOne({ telephone: telSans226 }).select('+mot_de_passe');
+        }
+
+        // ✅ Aussi chercher avec juste les 8 chiffres bruts (autre format ancien)
+        if (!user) {
+          const chiffres = identifiant.replace(/\D/g, '').slice(-8);
+          user = await User.findOne({ telephone: chiffres }).select('+mot_de_passe');
+        }
       }
     } else {
+      // ─── Login par email ────────────────────────────────────────────────
       user = await User.findOne({ email: identifiant.toLowerCase() }).select('+mot_de_passe');
     }
 
