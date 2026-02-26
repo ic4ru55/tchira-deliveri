@@ -2,13 +2,13 @@ const express      = require('express');
 const cors         = require('cors');
 const helmet       = require('helmet');
 const compression  = require('compression');
-const profilRoutes = require('./routes/profilRoutes')
 
 const authRoutes          = require('./routes/authRoutes');
 const livraisonRoutes     = require('./routes/livraisonRoutes');
 const tarifRoutes         = require('./routes/tarifRoutes');
 const adminRoutes         = require('./routes/adminRoutes');
 const notificationsRoutes = require('./routes/notifications');
+const profilRoutes        = require('./routes/profilRoutes'); // ✅ AJOUT
 
 // ✅ Initialiser Firebase Admin au démarrage du serveur
 const { initialiserFirebase } = require('./services/firebaseService');
@@ -18,7 +18,6 @@ const app = express();
 
 // ─── Sécurité ─────────────────────────────────────────────────────────────────
 app.use(helmet());
-app.use('/api/profil', profilRoutes);
 
 // ─── Compression ──────────────────────────────────────────────────────────────
 app.use(compression());
@@ -49,6 +48,7 @@ app.use('/api/livraisons',    livraisonRoutes);
 app.use('/api/tarifs',        tarifRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/profil',        profilRoutes); // ✅ AJOUT — était manquant → crash profil
 
 // ─── Route de santé ───────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

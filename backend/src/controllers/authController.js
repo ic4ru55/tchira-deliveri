@@ -1,146 +1,103 @@
 const jwt  = require('jsonwebtoken');
 const User = require('../models/User');
 
-// ─── Utilitaire : générer un token JWT ────────────────────────────────────────
-// On crée une fonction réutilisable plutôt que de répéter ce code partout
-const genererToken = (id) => {
-  return jwt.sign(
-    { id },                        // payload : ce qu'on met dans le token
-    process.env.JWT_SECRET,        // clé secrète pour signer
-    { expiresIn: process.env.JWT_EXPIRE }  // durée de validité
-  );
+const genererToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
+
+// ─── Normaliser numéro Burkina ─────────────────────────────────────────────────
+// Accepte: "76123456", "+22676123456", "0022676123456"
+// Retourne: "+22676123456" ou null si invalide
+const normaliserTelephone = (tel) => {
+  if (!tel) return null;
+  let t = tel.toString().trim().replace(/[\s\-().]/g, '');
+  if (t.startsWith('+226'))      { t = t.slice(4); }
+  else if (t.startsWith('00226')){ t = t.slice(5); }
+  else if (t.startsWith('226') && t.length === 11) { t = t.slice(3); }
+  if (!/^\d{8}$/.test(t)) return null;
+  return `+226${t}`;
 };
 
-// ─── REGISTER : créer un nouveau compte ───────────────────────────────────────
-// POST /api/auth/register
+// ─── REGISTER ─────────────────────────────────────────────────────────────────
 exports.register = async (req, res) => {
   try {
-    // 1. Extraire les données envoyées par le mobile
     const { nom, email, mot_de_passe, telephone, role } = req.body;
 
-    // 2. Vérifier si l'email existe déjà
-    const userExistant = await User.findOne({ email });
-    if (userExistant) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cet email est déjà utilisé'
-      });
+    const emailExistant = await User.findOne({ email: email.toLowerCase() });
+    if (emailExistant) {
+      return res.status(400).json({ success: false, message: 'Cet email est déjà utilisé' });
     }
 
-    // 3. Créer le user — le hook pre('save') hashera le mdp automatiquement
+    const telNormalise = normaliserTelephone(telephone);
+    if (!telNormalise) {
+      return res.status(400).json({ success: false, message: 'Numéro invalide — 8 chiffres Burkina requis' });
+    }
+
+    const telExistant = await User.findOne({ telephone: telNormalise });
+    if (telExistant) {
+      return res.status(400).json({ success: false, message: 'Ce numéro est déjà utilisé' });
+    }
+
     const user = await User.create({
-      nom,
-      email,
-      mot_de_passe,
-      telephone,
-      role: role || 'client',   // client par défaut si non précisé
+      nom, email: email.toLowerCase(), mot_de_passe, telephone: telNormalise, role: role || 'client',
     });
 
-    // 4. Générer le token avec l'ID du user créé
     const token = genererToken(user._id);
-
-    // 5. Renvoyer la réponse (sans le mot de passe)
     res.status(201).json({
-      success: true,
-      token,
-      user: {
-        id:        user._id,
-        nom:       user.nom,
-        email:     user.email,
-        role:      user.role,
-        telephone: user.telephone,
-      }
+      success: true, token,
+      user: { id: user._id, nom: user.nom, email: user.email, role: user.role, telephone: user.telephone },
     });
-
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ─── LOGIN : se connecter ─────────────────────────────────────────────────────
-// POST /api/auth/login
+// ─── LOGIN : email OU téléphone ────────────────────────────────────────────────
 exports.login = async (req, res) => {
   try {
-    // 1. Extraire email et mot de passe
-    const { email, mot_de_passe } = req.body;
-
-    // 2. Vérifier que les deux champs sont présents
-    if (!email || !mot_de_passe) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email et mot de passe requis'
-      });
+    const { email: identifiant, mot_de_passe } = req.body;
+    if (!identifiant || !mot_de_passe) {
+      return res.status(400).json({ success: false, message: 'Identifiant et mot de passe requis' });
     }
 
-    // 3. Chercher le user — on ajoute .select('+mot_de_passe')
-    //    car on avait mis select:false sur ce champ dans le modèle
-    const user = await User.findOne({ email }).select('+mot_de_passe');
+    let user = null;
+    // Si pas de @, c'est un numéro de téléphone
+    if (!identifiant.includes('@')) {
+      const telNormalise = normaliserTelephone(identifiant);
+      if (telNormalise) {
+        user = await User.findOne({ telephone: telNormalise }).select('+mot_de_passe');
+      }
+    } else {
+      user = await User.findOne({ email: identifiant.toLowerCase() }).select('+mot_de_passe');
+    }
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Email ou mot de passe incorrect'  // message volontairement vague
-      });
+      return res.status(401).json({ success: false, message: 'Identifiant ou mot de passe incorrect' });
     }
 
-    // 4. Vérifier le mot de passe avec la méthode du modèle
     const mdpCorrect = await user.verifierMotDePasse(mot_de_passe);
     if (!mdpCorrect) {
-      return res.status(401).json({
-        success: false,
-        message: 'Email ou mot de passe incorrect'
-      });
+      return res.status(401).json({ success: false, message: 'Identifiant ou mot de passe incorrect' });
     }
 
-    // 5. Vérifier que le compte est actif
     if (!user.actif) {
-      return res.status(403).json({
-        success: false,
-        message: 'Compte suspendu. Contactez l\'administrateur'
-      });
+      return res.status(403).json({ success: false, message: "Compte suspendu. Contactez l'administrateur" });
     }
 
-    // 6. Tout est bon — générer et renvoyer le token
     const token = genererToken(user._id);
-
     res.status(200).json({
-      success: true,
-      token,
-      user: {
-        id:        user._id,
-        nom:       user.nom,
-        email:     user.email,
-        role:      user.role,
-        telephone: user.telephone,
-      }
+      success: true, token,
+      user: { id: user._id, nom: user.nom, email: user.email, role: user.role, telephone: user.telephone },
     });
-
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ─── MOI : récupérer le profil connecté ───────────────────────────────────────
-// GET /api/auth/moi  (route protégée — nécessite le token)
+// ─── MOI ──────────────────────────────────────────────────────────────────────
 exports.moi = async (req, res) => {
   try {
-    // req.user est injecté par le middleware proteger (qu'on va créer juste après)
-    const user = await User.findById(req.user.id);
-
-    res.status(200).json({
-      success: true,
-      user
-    });
+    const user = await User.findById(req.user.id).select('-mot_de_passe');
+    res.status(200).json({ success: true, user });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
