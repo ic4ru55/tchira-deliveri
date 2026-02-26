@@ -2,10 +2,7 @@ const Delivery = require('../models/Delivery');
 const User     = require('../models/User');
 const { envoyerNotification } = require('../services/firebaseService');
 
-// ─── CRÉER une livraison ──────────────────────────────────────────────────────
-// Quand un CLIENT crée → notifier TOUS les livreurs actifs
-// Quand une RÉCEPTIONNISTE crée → notifier TOUS les livreurs actifs
-// (le ciblage individuel se fait dans accepterLivraison / assignerLivreur)
+// ─── CRÉER une livraison
 exports.creerLivraison = async (req, res) => {
   try {
     const {
@@ -28,13 +25,13 @@ exports.creerLivraison = async (req, res) => {
       prix:                prix                || 0,
       prix_base:           prix_base           || 0,
       frais_zone:          frais_zone          || 0,
-      client_nom_tel:       client_nom       || '',
+      client_nom_tel:      client_nom       || '',
       client_telephone_tel: client_telephone || '',
     });
 
     await livraison.populate('client', 'nom email telephone');
 
-    // ✅ CIBLAGE CORRECT : uniquement les LIVREURS reçoivent la notif de nouvelle mission
+    // Notifier tous les livreurs actifs
     const livreurs = await User.find({
       role:      'livreur',
       actif:     true,
@@ -56,7 +53,7 @@ exports.creerLivraison = async (req, res) => {
   }
 };
 
-// ─── LIVRAISONS DISPONIBLES (livreur) ────────────────────────────────────────
+// ─── LIVRAISONS DISPONIBLES (livreur)
 exports.getLivraisonsDisponibles = async (req, res) => {
   try {
     const livraisons = await Delivery
@@ -69,20 +66,20 @@ exports.getLivraisonsDisponibles = async (req, res) => {
   }
 };
 
-// ─── TOUTES LES LIVRAISONS (admin + réceptionniste) ──────────────────────────
+// ─── TOUTES LES LIVRAISONS (admin + réceptionniste)
 exports.toutesLesLivraisons = async (req, res) => {
   try {
     const { statut, date } = req.query;
     const filtre = {};
     if (statut) filtre.statut = statut;
     if (date) {
-      const debut = new Date(date); debut.setHours(0,  0,  0,   0);
-      const fin   = new Date(date); fin.setHours(23, 59, 59, 999);
+      const debut = new Date(date); debut.setHours(0,0,0,0);
+      const fin   = new Date(date); fin.setHours(23,59,59,999);
       filtre.createdAt = { $gte: debut, $lte: fin };
     }
     const livraisons = await Delivery
       .find(filtre)
-      .populate('client',  'nom telephone')
+      .populate('client', 'nom telephone')
       .populate('livreur', 'nom telephone')
       .sort({ createdAt: -1 });
     res.status(200).json({ success: true, nombre: livraisons.length, livraisons });
@@ -91,14 +88,14 @@ exports.toutesLesLivraisons = async (req, res) => {
   }
 };
 
-// ─── STATISTIQUES (admin) ─────────────────────────────────────────────────────
+// ─── STATISTIQUES (admin)
 exports.getStats = async (req, res) => {
   try {
     const { date } = req.query;
     let filtreDate = {};
     if (date) {
-      const debut = new Date(date); debut.setHours(0,  0,  0,   0);
-      const fin   = new Date(date); fin.setHours(23, 59, 59, 999);
+      const debut = new Date(date); debut.setHours(0,0,0,0);
+      const fin   = new Date(date); fin.setHours(23,59,59,999);
       filtreDate  = { createdAt: { $gte: debut, $lte: fin } };
     }
     const total       = await Delivery.countDocuments(filtreDate);
@@ -109,7 +106,7 @@ exports.getStats = async (req, res) => {
     const annulees    = await Delivery.countDocuments({ ...filtreDate, statut: 'annule' });
     const resultatCA  = await Delivery.aggregate([{ $match: { ...filtreDate, statut: 'livre' } }, { $group: { _id: null, total: { $sum: '$prix' } } }]);
     const chiffreAffaires = resultatCA[0]?.total || 0;
-    const aujourd = new Date(); aujourd.setHours(0, 0, 0, 0);
+    const aujourd = new Date(); aujourd.setHours(0,0,0,0);
     const resultatCAJour = await Delivery.aggregate([{ $match: { statut: 'livre', createdAt: { $gte: aujourd } } }, { $group: { _id: null, total: { $sum: '$prix' } } }]);
     const caAujourdhui = resultatCAJour[0]?.total || 0;
     const livreursActifs = await User.countDocuments({ role: 'livreur', actif: true });
@@ -119,7 +116,7 @@ exports.getStats = async (req, res) => {
   }
 };
 
-// ─── MES LIVRAISONS (client) ──────────────────────────────────────────────────
+// ─── MES LIVRAISONS (client)
 exports.mesLivraisons = async (req, res) => {
   try {
     const livraisons = await Delivery
@@ -132,7 +129,7 @@ exports.mesLivraisons = async (req, res) => {
   }
 };
 
-// ─── HISTORIQUE DU LIVREUR CONNECTÉ ──────────────────────────────────────────
+// ─── HISTORIQUE DU LIVREUR CONNECTÉ
 exports.monHistorique = async (req, res) => {
   try {
     const livraisons = await Delivery
@@ -145,17 +142,17 @@ exports.monHistorique = async (req, res) => {
   }
 };
 
-// ─── DÉTAIL d'une livraison ───────────────────────────────────────────────────
+// ─── DÉTAIL d'une livraison
 exports.getLivraison = async (req, res) => {
   try {
     const livraison = await Delivery
       .findById(req.params.id)
-      .populate('client',  'nom email telephone')
+      .populate('client', 'nom email telephone')
       .populate('livreur', 'nom email telephone');
     if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
     const estConcerne = livraison.client._id.toString() === req.user.id ||
-      (livraison.livreur && livraison.livreur._id.toString() === req.user.id) ||
-      req.user.role === 'admin' || req.user.role === 'receptionniste';
+                        (livraison.livreur && livraison.livreur._id.toString() === req.user.id) ||
+                        ['admin','receptionniste'].includes(req.user.role);
     if (!estConcerne) return res.status(403).json({ success: false, message: 'Accès non autorisé' });
     res.status(200).json({ success: true, livraison });
   } catch (error) {
@@ -163,43 +160,26 @@ exports.getLivraison = async (req, res) => {
   }
 };
 
-// ─── ACCEPTER une livraison (livreur) ────────────────────────────────────────
-// ✅ Un livreur ne peut avoir qu'une seule mission active à la fois
-// ✅ Seul le client de cette livraison reçoit la notification
+// ─── ACCEPTER une livraison (livreur)
 exports.accepterLivraison = async (req, res) => {
   try {
     const livraison = await Delivery.findById(req.params.id);
-    if (!livraison) {
-      return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    }
+    if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
+    if (livraison.statut !== 'en_attente') return res.status(400).json({ success: false, message: "Cette livraison n'est plus disponible" });
 
-    if (livraison.statut !== 'en_attente') {
-      return res.status(400).json({ success: false, message: "Cette livraison n'est plus disponible" });
-    }
-
-    // 🔹 Vérifier si le livreur a déjà une mission active
     const missionExistante = await Delivery.findOne({
       livreur: req.user.id,
       statut: { $in: ['en_cours', 'en_livraison'] }
     });
+    if (missionExistante) return res.status(400).json({ success: false, message: 'Vous avez déjà une mission en cours.' });
 
-    if (missionExistante) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vous avez déjà une mission en cours. Terminez-la avant d’en accepter une nouvelle.'
-      });
-    }
-
-    // 🔹 Assigner la livraison
     livraison.livreur = req.user.id;
     livraison.statut  = 'en_cours';
     await livraison.save();
 
-    // 🔹 Populer les infos du client et du livreur
     await livraison.populate('client',  'nom telephone fcm_token');
     await livraison.populate('livreur', 'nom telephone');
 
-    // 🔹 Notifier uniquement le client
     if (livraison.client?.fcm_token) {
       await envoyerNotification({
         fcmToken: livraison.client.fcm_token,
@@ -215,11 +195,7 @@ exports.accepterLivraison = async (req, res) => {
   }
 };
 
-// ─── ASSIGNER un livreur (réceptionniste + admin) ────────────────────────────
-// ✅ CIBLAGE CORRECT :
-//   - Le CLIENT de cette livraison reçoit une notif
-//   - Le LIVREUR assigné (ce livreur précis) reçoit une notif
-//   - Aucun autre utilisateur ne reçoit quoi que ce soit
+// ─── ASSIGNER un livreur (admin/receptionniste)
 exports.assignerLivreur = async (req, res) => {
   try {
     const { livreur_id } = req.body;
@@ -239,7 +215,6 @@ exports.assignerLivreur = async (req, res) => {
     await livraison.populate('client',  'nom telephone fcm_token');
     await livraison.populate('livreur', 'nom telephone fcm_token');
 
-    // ✅ Notifier UNIQUEMENT le client de cette livraison (pas tous les clients)
     if (livraison.client?.fcm_token) {
       await envoyerNotification({
         fcmToken: livraison.client.fcm_token,
@@ -249,7 +224,6 @@ exports.assignerLivreur = async (req, res) => {
       });
     }
 
-    // ✅ Notifier UNIQUEMENT CE livreur précis (pas tous les livreurs)
     if (livreur.fcm_token) {
       await envoyerNotification({
         fcmToken: livreur.fcm_token,
@@ -265,8 +239,7 @@ exports.assignerLivreur = async (req, res) => {
   }
 };
 
-// ─── METTRE À JOUR le statut (livreur) ───────────────────────────────────────
-// ✅ CIBLAGE CORRECT : uniquement le CLIENT de cette livraison reçoit les mises à jour
+// ─── METTRE À JOUR le statut (livreur)
 exports.mettreAJourStatut = async (req, res) => {
   try {
     const { statut } = req.body;
@@ -276,13 +249,13 @@ exports.mettreAJourStatut = async (req, res) => {
     };
     const livraison = await Delivery.findById(req.params.id);
     if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    if (livraison.livreur.toString() !== req.user.id) return res.status(403).json({ success: false, message: "Vous n'êtes pas le livreur de cette commande" });
+    if (livraison.livreur.toString() !== req.user.id) return res.status(403).json({ success: false, message: "Vous n'êtes pas le livreur" });
     const statutsAutorises = transitionsValides[livraison.statut] || [];
-    if (!statutsAutorises.includes(statut)) return res.status(400).json({ success: false, message: `Transition invalide : ${livraison.statut} → ${statut}`, autorises: statutsAutorises });
+    if (!statutsAutorises.includes(statut)) return res.status(400).json({ success: false, message: `Transition invalide : ${livraison.statut} → ${statut}` });
+
     livraison.statut = statut;
     await livraison.save();
 
-    // ✅ Notifier UNIQUEMENT le client de cette livraison
     const client = await User.findById(livraison.client).select('fcm_token');
     const messagesStatut = {
       'en_livraison': { titre: '🚚 Livraison en cours !', corps: 'Votre livreur est en route vers vous' },
@@ -298,13 +271,14 @@ exports.mettreAJourStatut = async (req, res) => {
         donnees:  { type: 'statut_change', statut, livraison_id: livraison._id.toString() },
       });
     }
+
     res.status(200).json({ success: true, livraison });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ─── MODIFIER une livraison ───────────────────────────────────────────────────
+// ─── MODIFIER une livraison
 exports.modifierLivraison = async (req, res) => {
   try {
     const { adresse_depart, adresse_arrivee, description_colis, categorie_colis, zone, prix } = req.body;
@@ -326,12 +300,12 @@ exports.modifierLivraison = async (req, res) => {
   }
 };
 
-// ─── ANNULER une livraison ────────────────────────────────────────────────────
+// ─── ANNULER une livraison
 exports.annulerLivraison = async (req, res) => {
   try {
     const livraison = await Delivery.findById(req.params.id);
     if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    const estAutorise = livraison.client.toString() === req.user.id || req.user.role === 'admin' || req.user.role === 'receptionniste';
+    const estAutorise = livraison.client.toString() === req.user.id || ['admin','receptionniste'].includes(req.user.role);
     if (!estAutorise) return res.status(403).json({ success: false, message: 'Action non autorisée' });
     if (livraison.statut !== 'en_attente') return res.status(400).json({ success: false, message: "Impossible d'annuler — un livreur a déjà pris en charge" });
     livraison.statut = 'annule';
@@ -342,7 +316,7 @@ exports.annulerLivraison = async (req, res) => {
   }
 };
 
-// ─── LIVREURS DISPONIBLES ─────────────────────────────────────────────────────
+// ─── LIVREURS DISPONIBLES
 exports.getLivreursDisponibles = async (req, res) => {
   try {
     const livreursOccupes = await Delivery.distinct('livreur', { statut: { $in: ['en_cours', 'en_livraison'] }, livreur: { $ne: null } });
@@ -351,29 +325,19 @@ exports.getLivreursDisponibles = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+};
 
-  // ─── MISSION ACTIVE DU LIVREUR CONNECTÉ ─────────────────────────────────────
+// ─── MISSION ACTIVE DU LIVREUR CONNECTÉ
 exports.missionActive = async (req, res) => {
   try {
     const livraison = await Delivery
-      .findOne({
-        livreur: req.user.id,
-        statut: { $in: ['en_cours', 'en_livraison'] }
-      })
+      .findOne({ livreur: req.user.id, statut: { $in: ['en_cours','en_livraison'] } })
       .populate('client', 'nom telephone')
       .sort({ createdAt: -1 });
 
-    return res.status(200).json({
-      success: true,
-      livraison: livraison || null
-    });
-
+    res.status(200).json({ success: true, livraison: livraison || null });
   } catch (error) {
     console.error('Erreur mission active:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
-}
 };
