@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/profil_screen.dart';
+import '../info_screen.dart';
 
 class HomeAdmin extends StatefulWidget {
   const HomeAdmin({super.key});
@@ -313,7 +314,22 @@ class _HomeAdminState extends State<HomeAdmin> {
         const SizedBox(height: 16),
         _boutonAction('✏️  Modifier mon profil', const Color(0xFF0D7377), () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilScreen())).then((_) => auth.rafraichirProfil())),
         const SizedBox(height: 10),
-        _boutonAction('🚪  Déconnexion', Colors.red, _deconnecter),
+                      _boutonAction('📞  Nous contacter', const Color(0xFF0D7377), () {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const InfoScreen(ongletInitial: 0)));
+              }),
+              const SizedBox(height: 8),
+              _boutonAction('ℹ️  À propos', const Color(0xFF1B3A6B), () {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const InfoScreen(ongletInitial: 1)));
+              }),
+              const SizedBox(height: 8),
+              _boutonAction('🛡️  Politique de confidentialité', Colors.grey, () {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const InfoScreen(ongletInitial: 2)));
+              }),
+              const SizedBox(height: 8),
+              _boutonAction('🚪  Déconnexion', Colors.red, _deconnecter),
       ])),
     ]));
   }

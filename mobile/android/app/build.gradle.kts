@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 val localProperties = Properties()
@@ -16,7 +17,7 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "com.tchira.tchira_delivery"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34 // Version fixe pour plus de stabilité
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -32,20 +33,42 @@ android {
 
     defaultConfig {
         applicationId = "com.tchira.tchira_delivery"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = 23 // Version minimale augmentée pour la compatibilité
+        targetSdk = 34
+        versionCode = 1 // À ajuster selon ton besoin
+        versionName = "1.0.0" // À ajuster selon ton besoin
 
-        manifestPlaceholders["mapsApiKey"] =
-            localProperties.getProperty("MAPS_API_KEY", "")
+        // ✅ Récupération de la clé API Maps
+        val mapsApiKey = localProperties.getProperty("MAPS_API_KEY", "")
+        
+        // ✅ Passage à AndroidManifest.xml
+        manifestPlaceholders["mapsApiKey"] = mapsApiKey
+        
+        // ✅ Passage au code Dart via --dart-define
+        resValue("string", "maps_api_key", mapsApiKey)
     }
 
     buildTypes {
         release {
+            // TODO: Configurer la signature release plus tard
+            signingConfig = signingConfigs.getByName("debug")
+            
+            // ✅ Optimisations pour la release
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        
+        debug {
+            // ✅ Config debug explicite
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+    
+    // ✅ Gestion des variantes
+    flavorDimensions += "default"
 }
 
 flutter {
@@ -55,6 +78,12 @@ flutter {
 dependencies {
     // ✅ Requis pour le core library desugaring (flutter_local_notifications)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    
+    // ✅ Dépendances Firebase (optionnel mais recommandé)
+    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-analytics")
 }
 
+// ✅ Application du plugin Google Services en fin de fichier
 apply(plugin = "com.google.gms.google-services")

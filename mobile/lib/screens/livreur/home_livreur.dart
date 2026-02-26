@@ -9,6 +9,7 @@ import '../../screens/auth/login_screen.dart';
 import '../../screens/profil_screen.dart';
 import '../../services/api_service.dart';
 import 'mission_screen.dart';
+import '../info_screen.dart';
 
 class HomeLibreur extends StatefulWidget {
   const HomeLibreur({super.key});
@@ -327,7 +328,22 @@ class _HomeLibreurState extends State<HomeLibreur> {
         _boutonProfil('✏️  Modifier mon profil', const Color(0xFF0D7377), () =>
             Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilScreen())).then((_) => auth.rafraichirProfil())),
         const SizedBox(height: 10),
-        _boutonProfil('🚪  Déconnexion', Colors.red, () async {
+                      _boutonProfil('📞  Nous contacter', const Color(0xFF0D7377), () {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const InfoScreen(ongletInitial: 0)));
+              }),
+              const SizedBox(height: 8),
+              _boutonProfil('ℹ️  À propos', const Color(0xFF1B3A6B), () {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const InfoScreen(ongletInitial: 1)));
+              }),
+              const SizedBox(height: 8),
+              _boutonProfil('🛡️  Politique de confidentialité', Colors.grey, () {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const InfoScreen(ongletInitial: 2)));
+              }),
+              const SizedBox(height: 8),
+              _boutonProfil('🚪  Déconnexion', Colors.red, () async {
           _timer?.cancel();
           final navigator = Navigator.of(context);
           await auth.deconnecter();
