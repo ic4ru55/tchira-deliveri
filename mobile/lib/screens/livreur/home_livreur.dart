@@ -21,7 +21,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
   Timer? _timer;
   List<dynamic> _historique   = [];
   bool _chargementHistorique  = true;
-  bool _historiqueCharge      = false;
 
   @override
   void initState() {
@@ -58,7 +57,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
     try {
       final r = await ApiService.mesLivraisonsLivreur();
       if (!mounted) return;
-      if (r['success'] == true) setState(() { _historique = r['livraisons'] ?? []; _chargementHistorique = false; _historiqueCharge = true; });
+      if (r['success'] == true) setState(() { _historique = r['livraisons'] ?? []; _chargementHistorique = false; });
       else setState(() => _chargementHistorique = false);
     } catch (_) { if (mounted) setState(() => _chargementHistorique = false); }
   }
@@ -101,11 +100,6 @@ class _HomeLibreurState extends State<HomeLibreur> {
     final provider = context.watch<LivraisonProvider>();
     final missionEnCours = provider.livraisonActive != null &&
         (provider.livraisonActive!.statut == 'en_cours' || provider.livraisonActive!.statut == 'en_livraison');
-
-    // Charger historique si onglet activé
-    if (_ongletActif == 1 && !_historiqueCharge && !_chargementHistorique) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _chargerHistorique());
-    }
 
     final pages = [
       _pageMissions(provider, missionEnCours),
@@ -175,7 +169,13 @@ class _HomeLibreurState extends State<HomeLibreur> {
         child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: List.generate(items.length, (i) {
           final sel = _ongletActif == i;
           return GestureDetector(
-            onTap: () => setState(() => _ongletActif = i),
+            onTap: () {
+                setState(() => _ongletActif = i);
+                // ✅ Charger (ou recharger) l'historique à chaque visite de l'onglet
+                if (i == 1 && !_chargementHistorique) {
+                  _chargerHistorique();
+                }
+              },
             behavior: HitTestBehavior.opaque,
             child: AnimatedContainer(duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -271,7 +271,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             const Text('Mon historique', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
             IconButton(icon: const Icon(Icons.refresh, color: Colors.white, size: 20),
-                onPressed: () { _historiqueCharge = false; _chargerHistorique(); }),
+                onPressed: _chargerHistorique),
           ])),
       Expanded(child: _chargementHistorique
           ? const Center(child: CircularProgressIndicator())
@@ -280,7 +280,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
                   Icon(Icons.history, size: 80, color: Colors.grey.shade200), const SizedBox(height: 16),
                   Text('Aucune livraison effectuée', style: TextStyle(fontSize: 16, color: Colors.grey.shade400))]))
               : RefreshIndicator(
-                  onRefresh: () async { _historiqueCharge = false; await _chargerHistorique(); },
+                  onRefresh: _chargerHistorique,
                   child: ListView(padding: const EdgeInsets.all(16), children: [
                     _resumeStats(),
                     const SizedBox(height: 16),
@@ -309,15 +309,60 @@ class _HomeLibreurState extends State<HomeLibreur> {
   ]));
 
   // ─── PAGE PROFIL ──────────────────────────────────────────────────────────
+  Widget _badgePaiement(Livraison liv) {
+    // Lire mode/statut paiement depuis les données JSON brutes si disponibles
+    final mode   = (liv as dynamic).modePaiement   as String? ?? 'cash';
+    final statut = (liv as dynamic).statutPaiement as String? ?? 'non_requis';
+
+    Color   couleur;
+    IconData icone;
+    String  label;
+
+    if (mode == 'cash') {
+      couleur = const Color(0xFFF97316);
+      icone   = Icons.payments_outlined;
+      label   = 'Cash';
+    } else if (statut == 'verifie') {
+      couleur = const Color(0xFF10B981);
+      icone   = Icons.verified_outlined;
+      label   = 'OM vérifié';
+    } else if (statut == 'preuve_soumise') {
+      couleur = Colors.orange;
+      icone   = Icons.hourglass_top_rounded;
+      label   = 'OM en attente';
+    } else {
+      couleur = Colors.grey;
+      icone   = Icons.phone_android_outlined;
+      label   = 'OM';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: couleur.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: couleur.withValues(alpha: 0.3))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icone, size: 12, color: couleur),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 10, color: couleur, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+
   Widget _carteMission(Livraison liv, LivraisonProvider provider) => Container(
     margin: const EdgeInsets.only(bottom: 14),
     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 3))]),
     child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: const Color(0xFF0D7377), borderRadius: BorderRadius.circular(20)),
-            child: Text('${_fmt(liv.prix)} FCFA', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14))),
+        Row(children: [
+          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFF0D7377), borderRadius: BorderRadius.circular(20)),
+              child: Text('${_fmt(liv.prix)} FCFA', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14))),
+          const SizedBox(width: 8),
+          _badgePaiement(liv),
+        ]),
         Text(_formatDate(liv.createdAt), style: const TextStyle(color: Colors.grey, fontSize: 12)),
       ]),
       const SizedBox(height: 14),

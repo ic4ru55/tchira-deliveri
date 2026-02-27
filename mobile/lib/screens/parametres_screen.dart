@@ -1,3 +1,5 @@
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,8 +33,10 @@ class _ParametresScreenState extends State<ParametresScreen> {
 
   Future<void> _chargerPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
-      _modeSombre       = prefs.getBool('pref_mode_sombre')      ?? false;
+      // Lire directement depuis SharedPreferences (source de vérité)
+      _modeSombre       = prefs.getBool('pref_mode_sombre') ?? false;
       _notifsPush       = prefs.getBool('pref_notifs_push')       ?? true;
       _notifsVibration  = prefs.getBool('pref_notifs_vibration')  ?? true;
       _notifsLivraison  = prefs.getBool('pref_notifs_livraison')  ?? true;
@@ -115,15 +119,8 @@ class _ParametresScreenState extends State<ParametresScreen> {
               valeur: _modeSombre,
               onChanged: (v) {
                 setState(() => _modeSombre = v);
-                _sauvegarder('pref_mode_sombre', v);
-                // Note: le thème sera appliqué globalement via ThemeProvider dans une prochaine version
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(v ? '🌙 Mode sombre activé' : '☀️ Mode clair activé'),
-                    backgroundColor: const Color(0xFF0D7377),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
+                // ✅ Applique immédiatement le thème dans toute l'app
+                context.read<ThemeProvider>().basculer(v);
               },
             ),
           ]),

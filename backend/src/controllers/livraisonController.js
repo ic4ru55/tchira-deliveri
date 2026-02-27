@@ -16,7 +16,8 @@ exports.creerLivraison = async (req, res) => {
 
     const livraison = await Delivery.create({
       client:              clientId,
-      adresse_depart,      adresse_arrivee,
+      adresse_depart,
+      adresse_arrivee,
       coordonnees_depart:  coordonnees_depart  || { lat: 0, lng: 0 },
       coordonnees_arrivee: coordonnees_arrivee || { lat: 0, lng: 0 },
       description_colis:   description_colis   || '',
@@ -27,11 +28,14 @@ exports.creerLivraison = async (req, res) => {
       frais_zone:          frais_zone          || 0,
       client_nom_tel:      client_nom       || '',
       client_telephone_tel: client_telephone || '',
+
+      // ✅ PATCH AJOUTÉ
+      mode_paiement:   req.body.mode_paiement || 'cash',
+      statut_paiement: req.body.mode_paiement === 'om' ? 'non_requis' : 'non_requis',
     });
 
     await livraison.populate('client', 'nom email telephone');
 
-    // Notifier tous les livreurs actifs
     const livreurs = await User.find({
       role:      'livreur',
       actif:     true,
@@ -156,188 +160,6 @@ exports.getLivraison = async (req, res) => {
     if (!estConcerne) return res.status(403).json({ success: false, message: 'Accès non autorisé' });
     res.status(200).json({ success: true, livraison });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── ACCEPTER une livraison (livreur)
-exports.accepterLivraison = async (req, res) => {
-  try {
-    const livraison = await Delivery.findById(req.params.id);
-    if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    if (livraison.statut !== 'en_attente') return res.status(400).json({ success: false, message: "Cette livraison n'est plus disponible" });
-
-    const missionExistante = await Delivery.findOne({
-      livreur: req.user.id,
-      statut: { $in: ['en_cours', 'en_livraison'] }
-    });
-    if (missionExistante) return res.status(400).json({ success: false, message: 'Vous avez déjà une mission en cours.' });
-
-    livraison.livreur = req.user.id;
-    livraison.statut  = 'en_cours';
-    await livraison.save();
-
-    await livraison.populate('client',  'nom telephone fcm_token');
-    await livraison.populate('livreur', 'nom telephone');
-
-    if (livraison.client?.fcm_token) {
-      await envoyerNotification({
-        fcmToken: livraison.client.fcm_token,
-        titre:    '🚴 Livreur en route !',
-        corps:    `${livraison.livreur.nom} prend en charge votre livraison`,
-        donnees:  { type: 'livreur_assigne', livraison_id: livraison._id.toString() },
-      });
-    }
-
-    res.status(200).json({ success: true, livraison });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── ASSIGNER un livreur (admin/receptionniste)
-exports.assignerLivreur = async (req, res) => {
-  try {
-    const { livreur_id } = req.body;
-    if (!livreur_id) return res.status(400).json({ success: false, message: 'livreur_id est requis' });
-
-    const livraison = await Delivery.findById(req.params.id);
-    if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    if (livraison.statut !== 'en_attente') return res.status(400).json({ success: false, message: "Cette livraison n'est plus disponible" });
-
-    const livreur = await User.findById(livreur_id);
-    if (!livreur || livreur.role !== 'livreur') return res.status(404).json({ success: false, message: 'Livreur introuvable' });
-
-    livraison.livreur = livreur_id;
-    livraison.statut  = 'en_cours';
-    await livraison.save();
-
-    await livraison.populate('client',  'nom telephone fcm_token');
-    await livraison.populate('livreur', 'nom telephone fcm_token');
-
-    if (livraison.client?.fcm_token) {
-      await envoyerNotification({
-        fcmToken: livraison.client.fcm_token,
-        titre:    '🚴 Livreur assigné !',
-        corps:    `${livreur.nom} prend en charge votre livraison`,
-        donnees:  { type: 'livreur_assigne', livraison_id: livraison._id.toString() },
-      });
-    }
-
-    if (livreur.fcm_token) {
-      await envoyerNotification({
-        fcmToken: livreur.fcm_token,
-        titre:    '📋 Mission assignée !',
-        corps:    `Nouvelle mission : ${livraison.adresse_depart} → ${livraison.adresse_arrivee}`,
-        donnees:  { type: 'mission_assignee', livraison_id: livraison._id.toString() },
-      });
-    }
-
-    res.status(200).json({ success: true, livraison });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── METTRE À JOUR le statut (livreur)
-exports.mettreAJourStatut = async (req, res) => {
-  try {
-    const { statut } = req.body;
-    const transitionsValides = {
-      'en_cours':     ['en_livraison', 'annule'],
-      'en_livraison': ['livre'],
-    };
-    const livraison = await Delivery.findById(req.params.id);
-    if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    if (livraison.livreur.toString() !== req.user.id) return res.status(403).json({ success: false, message: "Vous n'êtes pas le livreur" });
-    const statutsAutorises = transitionsValides[livraison.statut] || [];
-    if (!statutsAutorises.includes(statut)) return res.status(400).json({ success: false, message: `Transition invalide : ${livraison.statut} → ${statut}` });
-
-    livraison.statut = statut;
-    await livraison.save();
-
-    const client = await User.findById(livraison.client).select('fcm_token');
-    const messagesStatut = {
-      'en_livraison': { titre: '🚚 Livraison en cours !', corps: 'Votre livreur est en route vers vous' },
-      'livre':        { titre: '✅ Colis livré !',         corps: 'Votre colis a été livré avec succès. Merci !' },
-      'annule':       { titre: '❌ Livraison annulée',     corps: 'Votre livraison a été annulée' },
-    };
-    const notif = messagesStatut[statut];
-    if (notif && client?.fcm_token) {
-      await envoyerNotification({
-        fcmToken: client.fcm_token,
-        titre:    notif.titre,
-        corps:    notif.corps,
-        donnees:  { type: 'statut_change', statut, livraison_id: livraison._id.toString() },
-      });
-    }
-
-    res.status(200).json({ success: true, livraison });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── MODIFIER une livraison
-exports.modifierLivraison = async (req, res) => {
-  try {
-    const { adresse_depart, adresse_arrivee, description_colis, categorie_colis, zone, prix } = req.body;
-    const livraison = await Delivery.findById(req.params.id);
-    if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    if (livraison.statut !== 'en_attente') return res.status(400).json({ success: false, message: 'Impossible de modifier — livraison déjà prise en charge' });
-    if (adresse_depart)    livraison.adresse_depart    = adresse_depart;
-    if (adresse_arrivee)   livraison.adresse_arrivee   = adresse_arrivee;
-    if (description_colis) livraison.description_colis = description_colis;
-    if (categorie_colis)   livraison.categorie_colis   = categorie_colis;
-    if (zone)              livraison.zone              = zone;
-    if (prix)              livraison.prix              = prix;
-    await livraison.save();
-    await livraison.populate('client', 'nom telephone');
-    await livraison.populate('livreur', 'nom telephone');
-    res.status(200).json({ success: true, livraison });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── ANNULER une livraison
-exports.annulerLivraison = async (req, res) => {
-  try {
-    const livraison = await Delivery.findById(req.params.id);
-    if (!livraison) return res.status(404).json({ success: false, message: 'Livraison introuvable' });
-    const estAutorise = livraison.client.toString() === req.user.id || ['admin','receptionniste'].includes(req.user.role);
-    if (!estAutorise) return res.status(403).json({ success: false, message: 'Action non autorisée' });
-    if (livraison.statut !== 'en_attente') return res.status(400).json({ success: false, message: "Impossible d'annuler — un livreur a déjà pris en charge" });
-    livraison.statut = 'annule';
-    await livraison.save();
-    res.status(200).json({ success: true, message: 'Livraison annulée' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── LIVREURS DISPONIBLES
-exports.getLivreursDisponibles = async (req, res) => {
-  try {
-    const livreursOccupes = await Delivery.distinct('livreur', { statut: { $in: ['en_cours', 'en_livraison'] }, livreur: { $ne: null } });
-    const livreursDisponibles = await User.find({ role: 'livreur', _id: { $nin: livreursOccupes } }).select('nom telephone email');
-    res.status(200).json({ success: true, nombre: livreursDisponibles.length, livreurs: livreursDisponibles });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// ─── MISSION ACTIVE DU LIVREUR CONNECTÉ
-exports.missionActive = async (req, res) => {
-  try {
-    const livraison = await Delivery
-      .findOne({ livreur: req.user.id, statut: { $in: ['en_cours','en_livraison'] } })
-      .populate('client', 'nom telephone')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({ success: true, livraison: livraison || null });
-  } catch (error) {
-    console.error('Erreur mission active:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

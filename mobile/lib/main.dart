@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
 import 'providers/livraison_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/client/home_client.dart';
@@ -33,16 +34,50 @@ class TchiraApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => LivraisonProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        title:                      'Tchira Express',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0D7377)),
-          useMaterial3: true,
-        ),
-        home: const SplashDecision(),
+      child: const _TchiraMaterialApp(),
+    );
+  }
+}
+
+// Widget séparé pour pouvoir écouter ThemeProvider via context.watch
+class _TchiraMaterialApp extends StatelessWidget {
+  const _TchiraMaterialApp();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeMode = context.watch<ThemeProvider>().themeMode;
+
+    return MaterialApp(
+      title:                      'Tchira Express',
+      debugShowCheckedModeBanner: false,
+      themeMode:                  themeMode,
+
+      // ── Thème clair ───────────────────────────────────────────────────────
+      theme: ThemeData(
+        colorScheme:  ColorScheme.fromSeed(seedColor: const Color(0xFF0D7377)),
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF1F5F9),
       ),
+
+      // ── Thème sombre ──────────────────────────────────────────────────────
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor:   const Color(0xFF0D7377),
+          brightness:  Brightness.dark,
+        ),
+        useMaterial3:            true,
+        brightness:              Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        cardColor:               const Color(0xFF1E293B),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0D7377),
+          foregroundColor: Colors.white,
+        ),
+      ),
+
+      home: const SplashDecision(),
     );
   }
 }

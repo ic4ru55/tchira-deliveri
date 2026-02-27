@@ -75,54 +75,6 @@ class ApiService {
     }
   }
 
-  // ─── PROFIL ───────────────────────────────────────────────────────────────
-  static Future<Map<String, dynamic>> mettreAJourProfil({
-    String? nom,
-    String? telephone,
-    String? photoBase64,
-  }) async {
-    try {
-      final body = <String, dynamic>{};
-      if (nom         != null) body['nom']          = nom;
-      if (telephone   != null) body['telephone']    = telephone;
-      if (photoBase64 != null) body['photo_base64'] = photoBase64;
-
-      final response = await http
-          .put(
-            Uri.parse('$baseUrl/profil'),
-            headers: await _headers(),
-            body:    jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 20));
-      return _handleResponse(response);
-    } catch (e) {
-      return {'success': false, 'message': 'Connexion impossible'};
-    }
-  }
-
-  static Future<Map<String, dynamic>> changerMotDePasse({
-    required String ancienMdp,
-    required String nouveauMdp,
-  }) async {
-    try {
-      final response = await http
-          .put(
-            Uri.parse('$baseUrl/profil/mot-de-passe'),
-            headers: await _headers(),
-            body: jsonEncode({
-              'ancien_mdp':  ancienMdp,
-              'nouveau_mdp': nouveauMdp,
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
-      return _handleResponse(response);
-    } catch (e) {
-      return {'success': false, 'message': 'Connexion impossible'};
-    }
-  }
-
-
-
   static Future<Map<String, dynamic>> login({
     required String email,
     required String motDePasse,
@@ -247,7 +199,8 @@ class ApiService {
     required double prix,
     required double prixBase,
     required double fraisZone,
-    String description = '',
+    String description   = '',
+    String modePaiement  = 'cash', // ✅ 'cash' | 'om'
   }) async {
     try {
       final response = await http
@@ -263,6 +216,7 @@ class ApiService {
               'prix_base':         prixBase,
               'frais_zone':        fraisZone,
               'description_colis': description,
+              'mode_paiement':     modePaiement,  // ✅ nouveau
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -270,6 +224,122 @@ class ApiService {
     } catch (e) {
       return {'success': false, 'message': 'Connexion impossible'};
     }
+  }
+
+  // ── PAIEMENT : soumettre preuve OM ─────────────────────────────────────────
+  static Future<Map<String, dynamic>> soumettrePreuvePaiement({
+    required String livraisonId,
+    required String preuveBase64,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/paiements/$livraisonId/preuve'),
+        headers: await _headers(),
+        body: jsonEncode({ 'preuve': preuveBase64 }),
+      ).timeout(const Duration(seconds: 30));
+      return _handleResponse(response);
+    } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
+  }
+
+  // ── PAIEMENT : valider/rejeter preuve (récep/admin) ────────────────────────
+  static Future<Map<String, dynamic>> validerPreuvePaiement({
+    required String livraisonId,
+    required String action,   // 'valider' | 'rejeter'
+    String? motif,
+  }) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/paiements/$livraisonId/valider'),
+        headers: await _headers(),
+        // ✅ Correction ligne 254 : suppression du '?' inutile
+        body: jsonEncode({ 'action': action, 'motif': motif }),
+      ).timeout(const Duration(seconds: 10));
+      return _handleResponse(response);
+    } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
+  }
+
+  // ── PAIEMENT : confirmer cash (livreur) ────────────────────────────────────
+  static Future<Map<String, dynamic>> confirmerCash({
+    required String livraisonId,
+    String? photoBase64,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/paiements/$livraisonId/cash'),
+        headers: await _headers(),
+        // ✅ Correction ligne 269 : suppression du '?' inutile
+        body: jsonEncode({ 'photo': photoBase64 }),
+      ).timeout(const Duration(seconds: 30));
+      return _handleResponse(response);
+    } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
+  }
+
+  // ── PAIEMENT : soumettre photo preuve livraison (livreur) ──────────────────
+  static Future<Map<String, dynamic>> soumettrePreuveLivraison({
+    required String livraisonId,
+    required String photoBase64,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/paiements/$livraisonId/preuve-livraison'),
+        headers: await _headers(),
+        body: jsonEncode({ 'photo': photoBase64 }),
+      ).timeout(const Duration(seconds: 30));
+      return _handleResponse(response);
+    } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
+  }
+
+  // ── PROFIL : mettre à jour les informations personnelles ─────────────────
+  static Future<Map<String, dynamic>> mettreAJourProfil({
+    String? nom,
+    String? telephone,
+    String? photoBase64,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (nom != null)         body['nom']   = nom;
+      if (telephone != null)   body['telephone'] = telephone;
+      if (photoBase64 != null) body['photo'] = photoBase64;
+      final response = await http.put(
+        Uri.parse('$baseUrl/auth/profil'),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 15));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+  // ── PROFIL : changer le mot de passe ──────────────────────────────────────
+  static Future<Map<String, dynamic>> changerMotDePasse({
+    required String ancienMdp,
+    required String nouveauMdp,
+  }) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/auth/changer-mdp'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'ancien_mot_de_passe':  ancienMdp,
+          'nouveau_mot_de_passe': nouveauMdp,
+        }),
+      ).timeout(const Duration(seconds: 10));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
+  // ── PAIEMENT : preuves en attente (récep/admin) ────────────────────────────
+  static Future<Map<String, dynamic>> getPreuvesEnAttente() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/paiements/preuves-en-attente'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 10));
+      return _handleResponse(response);
+    } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
   }
 
   static Future<Map<String, dynamic>> getLivraisonsDisponibles() async {
@@ -294,25 +364,20 @@ class ApiService {
     }
   }
 
-// ✅ Mission active du livreur connecté
-static Future<Map<String, dynamic>> missionActiveLivreur() async {
-  try {
-    final response = await http
-        .get(
-          Uri.parse('$baseUrl/livraisons/mission-active'),
-          headers: await _headers(),
-        )
-        .timeout(const Duration(seconds: 15));
-
-    return _handleResponse(response);
-  } catch (e) {
-    return {'success': false, 'message': 'Connexion impossible'};
-  }
-}
-
-
-
   // ✅ Historique des livraisons du livreur connecté
+  // ── Mission active du livreur (en_cours ou en_livraison) ─────────────────
+  static Future<Map<String, dynamic>> missionActiveLivreur() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/livraisons/mission-active'),
+              headers: await _headers())
+          .timeout(const Duration(seconds: 10));
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Connexion impossible'};
+    }
+  }
+
   static Future<Map<String, dynamic>> mesLivraisonsLivreur() async {
     try {
       final response = await http

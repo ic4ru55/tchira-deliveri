@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../screens/auth/login_screen.dart';
 import '../profil_page.dart';
+import '../validation_paiement_screen.dart';
 
 class HomeAdmin extends StatefulWidget {
   const HomeAdmin({super.key});
@@ -108,7 +109,7 @@ class _HomeAdminState extends State<HomeAdmin> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final pages = [_ongletDashboard(), _ongletComptes(), _ongletLivraisons(), _ongletTarifs(), ProfilPage(
+    final pages = [_ongletDashboard(), _ongletComptes(), _ongletLivraisons(), _ongletTarifs(), const ValidationPaiementScreen(), ProfilPage(
           role: 'admin',
           couleurRole: const Color(0xFF0D7377),
           onDeconnexion: () async {
@@ -168,6 +169,7 @@ class _HomeAdminState extends State<HomeAdmin> {
       {'icon': Icons.people_outline,     'iconSel': Icons.people,       'label': 'Comptes'},
       {'icon': Icons.list_alt_outlined,  'iconSel': Icons.list_alt,     'label': 'Livraisons'},
       {'icon': Icons.price_change_outlined,'iconSel': Icons.price_change,'label': 'Tarifs'},
+      {'icon': Icons.verified_outlined,  'iconSel': Icons.verified,     'label': 'Paiements'},
       {'icon': Icons.person_outline,     'iconSel': Icons.person,       'label': 'Profil'},
     ];
     return Container(

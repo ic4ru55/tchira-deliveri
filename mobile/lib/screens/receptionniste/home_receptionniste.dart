@@ -6,6 +6,7 @@ import '../../providers/livraison_provider.dart';
 import '../../services/api_service.dart';
 import '../../screens/auth/login_screen.dart';
 import '../profil_page.dart';
+import '../validation_paiement_screen.dart';
 
 class HomeReceptionniste extends StatefulWidget {
   const HomeReceptionniste({super.key});
@@ -14,8 +15,8 @@ class HomeReceptionniste extends StatefulWidget {
 }
 
 class _HomeReceptionnisteState extends State<HomeReceptionniste> {
-  int _ongletActif = 0; // 0=Commandes 1=En cours 2=Profil
-
+  int _ongletActif = 0; // 0=Commandes 1=En cours 2=Paiements 3=Profil
+  final int _nbPreuves = 0; // badge sur onglet Paiements
   final _departCtrl    = TextEditingController();
   final _arriveeCtrl   = TextEditingController();
   final _descCtrl      = TextEditingController();
@@ -76,22 +77,72 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
     } finally { if (mounted) setState(() => _calculEnCours = false); }
   }
 
-  Future<void> _creerCommande() async {
-    if (_nomClientCtrl.text.isEmpty || _telClientCtrl.text.isEmpty) { _snack('Remplis le nom et le téléphone du client', Colors.red); return; }
-    if (_departCtrl.text.isEmpty || _arriveeCtrl.text.isEmpty) { _snack('Remplis les adresses', Colors.red); return; }
-    if (_categorieSelectionnee == null || _zoneSelectionnee == null) { _snack('Sélectionne une catégorie et une zone', Colors.red); return; }
-    if (_surDevis) { _snack('Contacte l\'admin pour ce type de colis', Colors.orange); return; }
+    Future<void> _creerCommande() async {
+    if (_nomClientCtrl.text.isEmpty || _telClientCtrl.text.isEmpty) { 
+      _snack('Remplis le nom et le téléphone du client', Colors.red); 
+      return; 
+    }
+    if (_departCtrl.text.isEmpty || _arriveeCtrl.text.isEmpty) { 
+      _snack('Remplis les adresses', Colors.red); 
+      return; 
+    }
+    if (_categorieSelectionnee == null || _zoneSelectionnee == null) { 
+      _snack('Sélectionne une catégorie et une zone', Colors.red); 
+      return; 
+    }
+    if (_surDevis) { 
+      _snack('Contacte l\'admin pour ce type de colis', Colors.orange); 
+      return; 
+    }
+    
     setState(() => _creationEnCours = true);
-    final provider = context.read<LivraisonProvider>(); final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<LivraisonProvider>(); 
+    final messenger = ScaffoldMessenger.of(context);
+    
     try {
-      final succes = await provider.creerLivraison(adresseDepart: _departCtrl.text.trim(), adresseArrivee: _arriveeCtrl.text.trim(), categorie: _categorieSelectionnee!, zoneCode: _zoneSelectionnee!, prix: _prixTotal ?? 0, prixBase: _prixBase ?? 0, fraisZone: _fraisZone ?? 0, description: _descCtrl.text.trim());
+      // ✅ Correction : la méthode retourne un String? (ID) ou null en cas d'échec
+      final livraisonId = await provider.creerLivraison(
+        adresseDepart: _departCtrl.text.trim(), 
+        adresseArrivee: _arriveeCtrl.text.trim(), 
+        categorie: _categorieSelectionnee!, 
+        zoneCode: _zoneSelectionnee!, 
+        prix: _prixTotal ?? 0, 
+        prixBase: _prixBase ?? 0, 
+        fraisZone: _fraisZone ?? 0, 
+        description: _descCtrl.text.trim()
+      );
+      
       if (!mounted) return;
-      if (succes) {
-        if (_livreurSelectionne != null && provider.mesLivraisons.isNotEmpty) await ApiService.assignerLivreur(livraisonId: provider.mesLivraisons.first.id, livreurId: _livreurSelectionne!);
-        _viderFormulaire(); messenger.showSnackBar(const SnackBar(content: Text('✅ Commande créée !'), backgroundColor: Colors.green));
-        setState(() => _ongletActif = 1); if (mounted) _chargerLivraisons();
-      } else messenger.showSnackBar(const SnackBar(content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
-    } finally { if (mounted) setState(() => _creationEnCours = false); }
+      
+      // ✅ Vérification : si livraisonId n'est pas null, c'est un succès
+      if (livraisonId != null) {
+        if (_livreurSelectionne != null) {
+          if (provider.mesLivraisons.isNotEmpty) {
+            final premiereLivraison = provider.mesLivraisons.first;
+            await ApiService.assignerLivreur(
+              livraisonId: premiereLivraison.id, 
+              livreurId: _livreurSelectionne!
+            );
+          }
+        }
+        
+        _viderFormulaire(); 
+        messenger.showSnackBar(const SnackBar(
+          content: Text('✅ Commande créée !'), 
+          backgroundColor: Colors.green
+        ));
+        
+        setState(() => _ongletActif = 1); 
+        if (mounted) _chargerLivraisons();
+      } else {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('❌ Erreur lors de la création'), 
+          backgroundColor: Colors.red
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _creationEnCours = false);
+    }
   }
 
   Future<void> _assignerLivreur(String livId, String livreurId) async {
@@ -117,7 +168,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final pages = [_pageCommandes(), _pageEnCours(), ProfilPage(
+    final pages = [_pageCommandes(), _pageEnCours(), const ValidationPaiementScreen(), ProfilPage(
           role: 'receptionniste',
           couleurRole: const Color(0xFF0D7377),
           onDeconnexion: () async {
@@ -175,6 +226,7 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
     final items = [
       {'icon': Icons.add_circle_outline, 'iconSel': Icons.add_circle,     'label': 'Commandes'},
       {'icon': Icons.list_alt_outlined,  'iconSel': Icons.list_alt,        'label': 'En cours'},
+      {'icon': Icons.verified_outlined,  'iconSel': Icons.verified,        'label': 'Paiements', 'badge': _nbPreuves},
       {'icon': Icons.person_outline,     'iconSel': Icons.person,          'label': 'Profil'},
     ];
     return Container(
@@ -186,8 +238,25 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
             child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               decoration: BoxDecoration(color: sel ? const Color(0xFF0D7377).withValues(alpha: 0.12) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(sel ? items[i]['iconSel'] as IconData : items[i]['icon'] as IconData, color: sel ? const Color(0xFF0D7377) : Colors.grey, size: 24),
-                const SizedBox(height: 2), Text(items[i]['label'] as String, style: TextStyle(fontSize: 11, fontWeight: sel ? FontWeight.w600 : FontWeight.normal, color: sel ? const Color(0xFF0D7377) : Colors.grey)),
+                Stack(clipBehavior: Clip.none, children: [
+                  Icon(sel ? items[i]['iconSel'] as IconData : items[i]['icon'] as IconData,
+                      color: sel ? const Color(0xFF0D7377) : Colors.grey, size: 24),
+                  if ((items[i]['badge'] as int? ?? 0) > 0)
+                    Positioned(right: -6, top: -4,
+                      child: Container(
+                        width: 16, height: 16,
+                        decoration: const BoxDecoration(
+                            color: Colors.red, shape: BoxShape.circle),
+                        child: Center(child: Text(
+                          '${items[i]['badge']}',
+                          style: const TextStyle(color: Colors.white,
+                              fontSize: 9, fontWeight: FontWeight.bold))))),
+                ]),
+                const SizedBox(height: 2),
+                Text(items[i]['label'] as String,
+                    style: TextStyle(fontSize: 11,
+                        fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
+                        color: sel ? const Color(0xFF0D7377) : Colors.grey)),
               ])));
         })))),
     );

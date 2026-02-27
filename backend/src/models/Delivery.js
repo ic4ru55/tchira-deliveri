@@ -54,7 +54,6 @@ const DeliverySchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Commande passée par téléphone (réceptionniste)
     client_nom_tel: {
       type: String,
       default: '',
@@ -85,6 +84,40 @@ const DeliverySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+
+    // ───────────── PATCH AJOUTÉ ─────────────
+
+    mode_paiement: {
+      type: String,
+      enum: ['om', 'cash'],
+      default: 'cash',
+    },
+
+    statut_paiement: {
+      type: String,
+      enum: ['non_requis', 'preuve_soumise', 'verifie', 'rejete'],
+      default: 'non_requis',
+    },
+
+    preuve_paiement: {
+      data:        { type: String },
+      soumis_le:   { type: Date },
+      verifie_le:  { type: Date },
+      verifie_par: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      motif_rejet: { type: String },
+    },
+
+    preuve_livraison: {
+      data:     { type: String },
+      prise_le: { type: Date },
+    },
+
+    alerte_timer_envoyee: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ───────────── FIN PATCH ─────────────
 
     position_livreur: {
       lat: { type: Number, default: 0 },

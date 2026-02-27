@@ -7,12 +7,6 @@ import 'package:geocoding/geocoding.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-// ─── Clé API Google Maps ───────────────────────────────────────────────────────
-// Même clé que celle dans AndroidManifest.xml / local.properties
-// On la lit via une constante de compilation pour ne pas la harcoder ici
-// Si tu as une clé différente pour Places, remplace la valeur ci-dessous
-import '../config/api_config.dart';
-
 class MapPickerScreen extends StatefulWidget {
   final String titre;
   final LatLng? positionInitiale;
@@ -141,9 +135,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     }).catchError((_) {});
   }
 
-  // ─── RECHERCHE avec l'API Geocoding de Google ─────────────────────────────
-  // On utilise l'API Geocoding (déjà activée avec la clé Maps)
-  // Pas besoin d'activer Places API séparément
+  // ─── RECHERCHE avec Nominatim (OpenStreetMap) ───────────────────────────────
+  // Gratuit, sans clé API, excellent coverage Afrique de l'Ouest
   void _onRechercheChanged(String texte) {
     _debounceTimer?.cancel();
     if (texte.trim().length < 3) {
@@ -158,34 +151,52 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   Future<void> _rechercherLieux(String query) async {
     setState(() => _rechercheEnCours = true);
     try {
-      // Geocoding API — même clé que Maps, pas de Places nécessaire
-      final encodedQuery = Uri.encodeComponent('$query, Burkina Faso');
+      // ✅ Nominatim (OpenStreetMap) — 100% gratuit, aucune clé requise
+      // Biaisé sur le Burkina Faso avec viewbox Bobo-Dioulasso et countrycodes=bf
+      final encoded = Uri.encodeComponent(query);
       final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
-        '?address=$encodedQuery'
-        '&key=${ApiConfig.googleMapsKey}'
-        '&region=bf'
-        '&language=fr',
+        'https://nominatim.openstreetmap.org/search'
+        '?q=$encoded'
+        '&format=json'
+        '&limit=6'
+        '&countrycodes=bf'
+        '&accept-language=fr'
+        '&addressdetails=1',
       );
-      final response = await http.get(url).timeout(const Duration(seconds: 8));
+
+      final response = await http.get(url, headers: {
+        // Nominatim exige un User-Agent identifiant l'app
+        'User-Agent': 'TchiraExpress/1.0 (contact@tchiraexpress.com)',
+        'Accept-Language': 'fr',
+      }).timeout(const Duration(seconds: 8));
+
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final results = data['results'] as List? ?? [];
-
+        final List<dynamic> results = jsonDecode(response.body);
         setState(() {
-          _suggestions = results.take(5).map((r) {
-            final loc = r['geometry']['location'];
-            return _Suggestion(
-              nom:       r['formatted_address'] as String,
-              position:  LatLng((loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble()),
-            );
+          _suggestions = results.map((r) {
+            final lat = double.tryParse(r['lat'].toString()) ?? 0.0;
+            final lon = double.tryParse(r['lon'].toString()) ?? 0.0;
+            // Construire un nom lisible depuis les détails d'adresse
+            final addr = r['address'] as Map<String, dynamic>? ?? {};
+            final parts = <String>[
+              if (addr['road'] != null)          addr['road'] as String,
+              if (addr['quarter'] != null)        addr['quarter'] as String
+              else if (addr['suburb'] != null)    addr['suburb'] as String,
+              if (addr['city'] != null)           addr['city'] as String
+              else if (addr['town'] != null)      addr['town'] as String
+              else if (addr['village'] != null)   addr['village'] as String,
+            ];
+            final nom = parts.isNotEmpty
+                ? parts.join(', ')
+                : (r['display_name'] as String).split(',').take(3).join(',');
+            return _Suggestion(nom: nom, position: LatLng(lat, lon));
           }).toList();
         });
       }
-    } catch (_) {
-      // Silencieux — la carte reste utilisable
+    } catch (e) {
+      // Silencieux — la carte reste utilisable sans la recherche
     } finally {
       if (mounted) setState(() => _rechercheEnCours = false);
     }

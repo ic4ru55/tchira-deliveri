@@ -14,6 +14,7 @@ import '../../services/api_service.dart';
 import 'tracking_screen.dart';
 import '../map_picker_screen.dart';
 import '../profil_page.dart';
+import '../paiement_client_screen.dart';
 
 class HomeClient extends StatefulWidget {
   const HomeClient({super.key});
@@ -30,6 +31,7 @@ class _HomeClientState extends State<HomeClient> {
 
   Timer? _timer;
   bool   _formVisible      = false;
+  String _modePaiement       = 'cash'; // 'cash' | 'om'
   bool   _chargementTarifs = true;
   bool   _gpsEnCours       = false;
   bool   _calculEnCours    = false;
@@ -174,24 +176,40 @@ class _HomeClientState extends State<HomeClient> {
 
     final provider  = context.read<LivraisonProvider>();
     final messenger = ScaffoldMessenger.of(context);
-    final succes    = await provider.creerLivraison(
+    final livraisonId = await provider.creerLivraison(
       adresseDepart: _departCtrl.text.trim(), adresseArrivee: _arriveeCtrl.text.trim(),
       categorie: _categorieSelectionnee!, zoneCode: _zoneSelectionnee!,
       prix: _prixTotal ?? 0, prixBase: _prixBase ?? 0, fraisZone: _fraisZone ?? 0,
       description: _descCtrl.text.trim(),
+      modePaiement: _modePaiement,
     );
     if (!mounted) return;
-    if (succes) {
-      _departCtrl.clear(); _arriveeCtrl.clear(); _descCtrl.clear();
-      setState(() {
-        _formVisible = false; _categorieSelectionnee = null; _zoneSelectionnee = null;
-        _prixTotal = null; _prixBase = null; _fraisZone = null;
-        _coordDepart = null; _coordArrivee = null;
-      });
-      messenger.showSnackBar(const SnackBar(content: Text('✅ Livraison créée !'), backgroundColor: Colors.green));
-      setState(() => _ongletActif = 1);
+    if (livraisonId == null) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
+      return;
+    }
+    // Capturer mode et montant AVANT le reset du state
+    final modeChoisi  = _modePaiement;
+    final montantFinal = _prixTotal ?? 0;
+    _departCtrl.clear(); _arriveeCtrl.clear(); _descCtrl.clear();
+    setState(() {
+      _formVisible = false; _categorieSelectionnee = null; _zoneSelectionnee = null;
+      _prixTotal = null; _prixBase = null; _fraisZone = null;
+      _coordDepart = null; _coordArrivee = null; _modePaiement = 'cash';
+      _ongletActif = 1;
+    });
+    if (modeChoisi == 'om' && mounted) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PaiementClientScreen(
+          livraisonId: livraisonId,
+          montant:     montantFinal,
+        ),
+      ));
     } else {
-      messenger.showSnackBar(const SnackBar(content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
+      messenger.showSnackBar(const SnackBar(
+        content: Text('✅ Livraison créée ! Un livreur va prendre en charge votre colis.'),
+        backgroundColor: Colors.green));
     }
   }
 
@@ -333,7 +351,8 @@ class _HomeClientState extends State<HomeClient> {
             _carteZones(),      const SizedBox(height: 12),
             if (_prixTotal != null) _cartePrix(),
             const SizedBox(height: 16),
-            _boutonCreer(provider), const SizedBox(height: 80),
+            _selecteurModePaiement(),
+        _boutonCreer(provider), const SizedBox(height: 80),
           ]),
         ))
       else
@@ -500,6 +519,68 @@ class _HomeClientState extends State<HomeClient> {
         Text(l, style: const TextStyle(color: Colors.grey)),
         Text('${_fmt(m)} FCFA', style: const TextStyle(color: Color(0xFF0D7377))),
       ]));
+
+  Widget _selecteurModePaiement() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Mode de paiement',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: _optionPaiement(
+            valeur: 'cash',
+            label: 'Cash à la livraison',
+            icone: Icons.payments_outlined,
+            couleur: const Color(0xFFF97316),
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: _optionPaiement(
+            valeur: 'om',
+            label: 'Orange Money',
+            icone: Icons.phone_android_outlined,
+            couleur: const Color(0xFFFF6600),
+          )),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _optionPaiement({
+    required String valeur,
+    required String label,
+    required IconData icone,
+    required Color couleur,
+  }) {
+    final sel = _modePaiement == valeur;
+    return GestureDetector(
+      onTap: () => setState(() => _modePaiement = valeur),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: sel ? couleur.withValues(alpha: 0.1) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: sel ? couleur : Colors.grey.shade200,
+              width: sel ? 2 : 1)),
+        child: Column(children: [
+          Icon(icone, color: sel ? couleur : Colors.grey, size: 24),
+          const SizedBox(height: 4),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600,
+                  color: sel ? couleur : Colors.grey),
+              textAlign: TextAlign.center),
+        ]),
+      ),
+    );
+  }
 
   Widget _boutonCreer(LivraisonProvider p) => SizedBox(width: double.infinity, height: 52,
       child: ElevatedButton.icon(

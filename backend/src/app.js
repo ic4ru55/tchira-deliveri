@@ -8,21 +8,20 @@ const livraisonRoutes     = require('./routes/livraisonRoutes');
 const tarifRoutes         = require('./routes/tarifRoutes');
 const adminRoutes         = require('./routes/adminRoutes');
 const notificationsRoutes = require('./routes/notifications');
-const profilRoutes        = require('./routes/profilRoutes'); // ✅ AJOUT
+const profilRoutes        = require('./routes/profilRoutes');
 
-// ✅ Initialiser Firebase Admin au démarrage du serveur
+// ───── PATCH IMPORT ─────
+const paiementRoutes = require('./routes/paiementRoutes');
+// ────────────────────────
+
 const { initialiserFirebase } = require('./services/firebaseService');
 initialiserFirebase();
 
 const app = express();
 
-// ─── Sécurité ─────────────────────────────────────────────────────────────────
 app.use(helmet());
-
-// ─── Compression ──────────────────────────────────────────────────────────────
 app.use(compression());
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
 const originesAutorisees = process.env.NODE_ENV === 'production'
   ? [
       /^https:\/\/.*\.railway\.app$/,
@@ -38,19 +37,20 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// ─── Parsers ──────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
 app.use('/api/livraisons',    livraisonRoutes);
 app.use('/api/tarifs',        tarifRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationsRoutes);
-app.use('/api/profil',        profilRoutes); // ✅ AJOUT — était manquant → crash profil
+app.use('/api/profil',        profilRoutes);
 
-// ─── Route de santé ───────────────────────────────────────────────────────────
+// ───── PATCH ROUTE ─────
+app.use('/api/paiements', paiementRoutes);
+// ───────────────────────
+
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -60,7 +60,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -68,7 +67,6 @@ app.use((req, res) => {
   });
 });
 
-// ─── Erreur globale ───────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   const message = process.env.NODE_ENV === 'production'
     ? 'Erreur serveur interne'
@@ -76,5 +74,11 @@ app.use((err, req, res, next) => {
   console.error(`[ERREUR] ${err.message}`);
   res.status(err.status || 500).json({ success: false, message });
 });
+
+// ───── PATCH TIMER ─────
+const { verifierTimerAssignation } = require('./controllers/paiementController');
+setInterval(verifierTimerAssignation, 5 * 60 * 1000);
+verifierTimerAssignation();
+// ───────────────────────
 
 module.exports = app;
