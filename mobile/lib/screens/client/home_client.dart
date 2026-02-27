@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +10,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/livraison_provider.dart';
 import '../../models/livraison.dart';
 import '../../screens/auth/login_screen.dart';
-import '../../screens/profil_screen.dart';
 import '../../services/api_service.dart';
 import 'tracking_screen.dart';
 import '../map_picker_screen.dart';
-import '../info_screen.dart';
 import '../profil_page.dart';
 
 class HomeClient extends StatefulWidget {
@@ -214,9 +211,10 @@ class _HomeClientState extends State<HomeClient> {
           couleurRole: const Color(0xFFF97316),
           onDeconnexion: () async {
             _timer?.cancel();
+            final nav = Navigator.of(context);
             await auth.deconnecter();
             if (!mounted) return;
-            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+            nav.pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
           },
         ),
     ];
@@ -387,66 +385,6 @@ class _HomeClientState extends State<HomeClient> {
   }
 
   // ─── PAGE PROFIL ───────────────────────────────────────────────────────────
-  Widget _pageProfil(AuthProvider auth) {
-    final user = auth.user;
-    return SingleChildScrollView(child: Column(children: [
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(0, 56, 0, 32),
-        decoration: const BoxDecoration(color: Color(0xFF0D7377),
-            borderRadius: BorderRadius.only(bottomLeft: Radius.circular(32), bottomRight: Radius.circular(32))),
-        child: Column(children: [
-          Stack(alignment: Alignment.bottomRight, children: [
-            Container(width: 90, height: 90,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), color: Colors.white.withValues(alpha: 0.2)),
-              child: ClipOval(child: _buildPhoto(user?.photoBase64))),
-            GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilScreen())).then((_) => auth.rafraichirProfil()),
-              child: Container(padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(color: Color(0xFFF97316), shape: BoxShape.circle),
-                  child: const Icon(Icons.edit, size: 14, color: Colors.white))),
-          ]),
-          const SizedBox(height: 12),
-          Text(user?.nom ?? '', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-              decoration: BoxDecoration(color: const Color(0xFFF97316), borderRadius: BorderRadius.circular(20)),
-              child: const Text('👤 Client', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
-        ]),
-      ),
-      Padding(padding: const EdgeInsets.all(16), child: Column(children: [
-        _ligneInfo(Icons.email_outlined, 'Email', user?.email ?? ''),
-        _ligneInfo(Icons.phone_outlined, 'Téléphone', user?.telephone ?? ''),
-        const SizedBox(height: 16),
-        _boutonProfil('✏️  Modifier mon profil', const Color(0xFF0D7377), () =>
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilScreen())).then((_) => auth.rafraichirProfil())),
-        const SizedBox(height: 10),
-                      _boutonProfil('📞  Nous contacter', const Color(0xFF0D7377), () {
-                Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const InfoScreen(ongletInitial: 0)));
-              }),
-              const SizedBox(height: 8),
-              _boutonProfil('ℹ️  À propos', const Color(0xFF1B3A6B), () {
-                Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const InfoScreen(ongletInitial: 1)));
-              }),
-              const SizedBox(height: 8),
-              _boutonProfil('🛡️  Politique de confidentialité', Colors.grey, () {
-                Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const InfoScreen(ongletInitial: 2)));
-              }),
-              const SizedBox(height: 8),
-              _boutonProfil('🚪  Déconnexion', Colors.red, () async {
-          final navigator = Navigator.of(context);
-          _timer?.cancel();
-          await auth.deconnecter();
-          if (!mounted) return;
-          navigator.pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
-        }),
-      ])),
-    ]));
-  }
-
   // ─── FORMULAIRE ADRESSES ────────────────────────────────────────────────────
   Widget _carteFormulaire() {
     return _conteneur(titre: '📍 Adresses', child: Column(children: [
@@ -600,31 +538,6 @@ class _HomeClientState extends State<HomeClient> {
   }
 
   // ─── Helpers UI ────────────────────────────────────────────────────────────
-  Widget _ligneInfo(IconData ic, String label, String val) => Container(margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))]),
-    child: Row(children: [Icon(ic, size: 18, color: const Color(0xFF0D7377)), const SizedBox(width: 12),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        Text(val, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      ])]));
-
-  Widget _boutonProfil(String label, Color couleur, VoidCallback onTap) => SizedBox(width: double.infinity, height: 50,
-    child: ElevatedButton(onPressed: onTap,
-      style: ElevatedButton.styleFrom(backgroundColor: couleur, foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-      child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600))));
-
-  Widget _buildPhoto(String? b64) {
-    if (b64 != null && b64.isNotEmpty) {
-      try {
-        final data = b64.replaceFirst(RegExp(r'data:image/[^;]+;base64,'), '');
-        return Image.memory(base64Decode(data), fit: BoxFit.cover, width: 90, height: 90);
-      } catch (_) {}
-    }
-    return const Icon(Icons.person, size: 48, color: Colors.white70);
-  }
-
   Widget _conteneur({required String titre, required Widget child}) => Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),

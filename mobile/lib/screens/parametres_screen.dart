@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -117,7 +116,7 @@ class _ParametresScreenState extends State<ParametresScreen> {
               onChanged: (v) {
                 setState(() => _modeSombre = v);
                 _sauvegarder('pref_mode_sombre', v);
-                // TODO: appliquer le thème globalement via ThemeProvider
+                // Note: le thème sera appliqué globalement via ThemeProvider dans une prochaine version
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(v ? '🌙 Mode sombre activé' : '☀️ Mode clair activé'),
@@ -271,7 +270,8 @@ class _ParametresScreenState extends State<ParametresScreen> {
           Switch.adaptive(
             value: valeur,
             onChanged: actif ? onChanged : null,
-            activeColor: const Color(0xFF0D7377),
+            activeThumbColor: const Color(0xFF0D7377),
+            activeTrackColor: const Color(0xFF0D7377).withValues(alpha: 0.5),
           ),
         ]),
       ),

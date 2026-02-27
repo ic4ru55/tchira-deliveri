@@ -11,7 +11,7 @@ import 'package:http/http.dart' as http;
 // Même clé que celle dans AndroidManifest.xml / local.properties
 // On la lit via une constante de compilation pour ne pas la harcoder ici
 // Si tu as une clé différente pour Places, remplace la valeur ci-dessous
-import 'config/api_config.dart';
+import '../config/api_config.dart';
 
 class MapPickerScreen extends StatefulWidget {
   final String titre;

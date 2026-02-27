@@ -118,7 +118,7 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
             Container(width: 70, height: 70,
               decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5), color: Colors.white.withValues(alpha: 0.1)),
               child: ClipOval(child: Image.asset('assets/images/logo.jpg', fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.local_shipping, color: Colors.white, size: 36)))),
+                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.local_shipping, color: Colors.white, size: 36)))),
             const SizedBox(height: 16),
             const Text('Tchira Express', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
