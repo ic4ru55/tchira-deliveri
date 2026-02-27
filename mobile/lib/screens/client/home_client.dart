@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import '../../services/api_service.dart';
 import 'tracking_screen.dart';
 import '../map_picker_screen.dart';
 import '../info_screen.dart';
+import '../profil_page.dart';
 
 class HomeClient extends StatefulWidget {
   const HomeClient({super.key});
@@ -207,7 +209,16 @@ class _HomeClientState extends State<HomeClient> {
     final pages = [
       _pageAccueil(provider, user),
       _pageLivraisons(provider),
-      _pageProfil(auth),
+      ProfilPage(
+          role: 'client',
+          couleurRole: const Color(0xFFF97316),
+          onDeconnexion: () async {
+            _timer?.cancel();
+            await auth.deconnecter();
+            if (!mounted) return;
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+          },
+        ),
     ];
 
     // ✅ FIX RETOUR : PopScope intercepte le bouton retour Android
@@ -238,9 +249,9 @@ class _HomeClientState extends State<HomeClient> {
             ],
           ),
         );
-        if (quitter == true && context.mounted) {
-          // ignore: use_build_context_synchronously
-          Navigator.of(context).pop();
+        if (quitter == true) {
+          // ✅ SystemNavigator.pop() quitte proprement l'app Android sans écran noir
+          SystemNavigator.pop();
         }
       },
       child: Scaffold(

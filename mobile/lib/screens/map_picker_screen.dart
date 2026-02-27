@@ -11,10 +11,7 @@ import 'package:http/http.dart' as http;
 // Même clé que celle dans AndroidManifest.xml / local.properties
 // On la lit via une constante de compilation pour ne pas la harcoder ici
 // Si tu as une clé différente pour Places, remplace la valeur ci-dessous
-// ✅ La clé est lue depuis build.gradle via dart-define
-// Elle n'est JAMAIS écrite en dur dans le code source
-// Voir instructions de déploiement ci-dessous
-const String _kGoogleApiKey = String.fromEnvironment('MAPS_API_KEY');
+import 'config/api_config.dart';
 
 class MapPickerScreen extends StatefulWidget {
   final String titre;
@@ -166,7 +163,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/geocode/json'
         '?address=$encodedQuery'
-        '&key=$_kGoogleApiKey'
+        '&key=${ApiConfig.googleMapsKey}'
         '&region=bf'
         '&language=fr',
       );

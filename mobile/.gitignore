@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+lib/config/api_config.dart
+
+# Clés et configs sensibles
+android/local.properties
+android/key.properties
+.env

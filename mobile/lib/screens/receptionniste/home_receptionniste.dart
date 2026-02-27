@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/profil_screen.dart';
 import '../info_screen.dart';
+import '../profil_page.dart';
 
 class HomeReceptionniste extends StatefulWidget {
   const HomeReceptionniste({super.key});
@@ -118,7 +120,16 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final pages = [_pageCommandes(), _pageEnCours(), _pageProfil(auth)];
+    final pages = [_pageCommandes(), _pageEnCours(), ProfilPage(
+          role: 'receptionniste',
+          couleurRole: const Color(0xFF0D7377),
+          onDeconnexion: () async {
+            _timer?.cancel();
+            await auth.deconnecter();
+            if (!mounted) return;
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+          },
+        )];
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -143,8 +154,9 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
             ],
           ),
         );
-        if (quitter == true && context.mounted) {
-          Navigator.of(context).pop();
+        if (quitter == true) {
+          // ✅ SystemNavigator.pop() quitte proprement l'app Android sans écran noir
+          SystemNavigator.pop();
         }
       },
       child: Scaffold(

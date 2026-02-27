@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../screens/profil_screen.dart';
 import '../../services/api_service.dart';
 import 'mission_screen.dart';
 import '../info_screen.dart';
+import '../profil_page.dart';
 
 class HomeLibreur extends StatefulWidget {
   const HomeLibreur({super.key});
@@ -111,7 +113,16 @@ class _HomeLibreurState extends State<HomeLibreur> {
     final pages = [
       _pageMissions(provider, missionEnCours),
       _pageHistorique(),
-      _pageProfil(auth),
+      ProfilPage(
+          role: 'livreur',
+          couleurRole: const Color(0xFF1B3A6B),
+          onDeconnexion: () async {
+            _timer?.cancel();
+            await auth.deconnecter();
+            if (!mounted) return;
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+          },
+        ),
     ];
 
     return PopScope(
@@ -138,8 +149,9 @@ class _HomeLibreurState extends State<HomeLibreur> {
             ],
           ),
         );
-        if (quitter == true && context.mounted) {
-          Navigator.of(context).pop();
+        if (quitter == true) {
+          // ✅ SystemNavigator.pop() quitte proprement l'app Android sans écran noir
+          SystemNavigator.pop();
         }
       },
       child: Scaffold(

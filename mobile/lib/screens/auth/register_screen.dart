@@ -1,11 +1,10 @@
-// ignore_for_file: unnecessary_underscores
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../client/home_client.dart';
 import '../livreur/home_livreur.dart';
+import '../info_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -19,9 +18,10 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
   final _emailCtrl = TextEditingController();
   final _mdpCtrl   = TextEditingController();
   final _telCtrl   = TextEditingController(); // 8 chiffres seulement
-  String _role        = 'client';
-  bool   _mdpVisible  = false;
-  int    _etape       = 0; // 0=rôle, 1=infos, 2=sécurité
+  String _role             = 'client';
+  bool   _mdpVisible       = false;
+  int    _etape            = 0; // 0=rôle, 1=infos, 2=sécurité
+  bool   _politiqueAcceptee = false; // ✅ Doit être coché avant inscription
 
   late AnimationController _animCtrl;
   late Animation<double>   _fadeAnim;
@@ -69,6 +69,11 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    // ✅ Vérifier que la politique est acceptée
+    if (!_politiqueAcceptee) {
+      _snack('Veuillez accepter la politique de confidentialité pour continuer');
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final succes = await auth.register(
       nom: _nomCtrl.text.trim(),
@@ -233,7 +238,70 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                     child: Row(children: [const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 18), const SizedBox(width: 8),
                       Expanded(child: Text(auth.erreur!, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)))])),
                 ],
-                const SizedBox(height: 28),
+                const SizedBox(height: 20),
+
+                // ✅ Case à cocher — Politique de confidentialité
+                GestureDetector(
+                  onTap: () => setState(() => _politiqueAcceptee = !_politiqueAcceptee),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _politiqueAcceptee
+                          ? const Color(0xFF0D7377).withValues(alpha: 0.06)
+                          : Colors.orange.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _politiqueAcceptee
+                            ? const Color(0xFF0D7377).withValues(alpha: 0.4)
+                            : Colors.orange.withValues(alpha: 0.4),
+                        width: 1.5),
+                    ),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      // Case à cocher
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 22, height: 22, margin: const EdgeInsets.only(top: 1),
+                        decoration: BoxDecoration(
+                          color: _politiqueAcceptee ? const Color(0xFF0D7377) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: _politiqueAcceptee ? const Color(0xFF0D7377) : Colors.grey.shade400,
+                            width: 2),
+                        ),
+                        child: _politiqueAcceptee
+                            ? const Icon(Icons.check, size: 14, color: Colors.white)
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      // Texte avec lien cliquable
+                      Expanded(child: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.5),
+                          children: [
+                            const TextSpan(text: "J'ai lu et j'accepte la "),
+                            WidgetSpan(child: GestureDetector(
+                              onTap: () {
+                                // Ouvrir la politique sans cocher automatiquement
+                                Navigator.push(context, MaterialPageRoute(
+                                    builder: (_) => const InfoScreen(ongletInitial: 2)));
+                              },
+                              child: const Text(
+                                'politique de confidentialité',
+                                style: TextStyle(
+                                  fontSize: 13, color: Color(0xFF0D7377),
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline),
+                              ),
+                            )),
+                            const TextSpan(text: " et les conditions d'utilisation de Tchira Express."),
+                          ],
+                        ),
+                      )),
+                    ]),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
                 SizedBox(width: double.infinity, height: 52, child: ElevatedButton.icon(
                   onPressed: auth.isLoading ? null : _register,
                   icon: auth.isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_outline),
