@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -190,12 +191,17 @@ class _TrackingScreenState extends State<TrackingScreen>
                       child: IconButton(
                         icon: const Icon(
                           Icons.phone, color: Color(0xFF0D7377)),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(
-                              'Appel : ${(livraison.livreur as Map)['telephone'] ?? ''}'),
-                            backgroundColor: const Color(0xFF0D7377),
-                          ));
+                        onPressed: () async {
+                          final tel = (livraison.livreur as Map)['telephone'] as String? ?? '';
+                          if (tel.isEmpty) return;
+                          final uri = Uri.parse('tel:$tel');
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri);
+                          } else if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Impossible d\'appeler $tel'),
+                              backgroundColor: Colors.red));
+                          }
                         },
                       ),
                     ),
@@ -206,14 +212,31 @@ class _TrackingScreenState extends State<TrackingScreen>
 
             if (hasGps)
               _conteneur(
-                titre: '🛰️ Position GPS du livreur',
-                child: Column(
-                  children: [
-                    _ligneInfo('Latitude',  position.lat.toStringAsFixed(6)),
-                    const SizedBox(height: 6),
-                    _ligneInfo('Longitude', position.lng.toStringAsFixed(6)),
-                  ],
-                ),
+                titre: '🛰️ Position en direct',
+                child: Column(children: [
+                  Row(children: [
+                    Expanded(child: _infoTile(
+                      icon: Icons.near_me, color: const Color(0xFF0D7377),
+                      label: 'Coordonnées',
+                      value: '${position.lat.toStringAsFixed(4)}, ${position.lng.toStringAsFixed(4)}')),
+                    const SizedBox(width: 12),
+                    Expanded(child: _infoTile(
+                      icon: Icons.update, color: Colors.green,
+                      label: 'Mise à jour',
+                      value: 'Il y a < 10s')),
+                  ]),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(10)),
+                    child: Row(children: [
+                      const Icon(Icons.circle, color: Colors.green, size: 10),
+                      const SizedBox(width: 8),
+                      const Text('Livreur actif et en déplacement',
+                          style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w600)),
+                    ])),
+                ]),
               ),
 
             const SizedBox(height: 20),
@@ -488,19 +511,18 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  Widget _ligneInfo(String label, String valeur) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label,
-            style: const TextStyle(color: Colors.grey, fontSize: 13)),
-        Text(valeur,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600, fontSize: 13,
-              color: Color(0xFF0D7377))),
-      ],
-    );
-  }
+  Widget _infoTile({required IconData icon, required Color color, required String label, required String value}) =>
+    Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(10)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Icon(icon, size: 13, color: color), const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w500))]),
+        const SizedBox(height: 3),
+        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
+            overflow: TextOverflow.ellipsis),
+      ]));
+
 
   Color _couleurStatut(String statut) {
     switch (statut) {

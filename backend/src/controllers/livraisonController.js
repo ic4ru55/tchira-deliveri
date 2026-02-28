@@ -31,7 +31,6 @@ exports.creerLivraison = async (req, res) => {
       client_nom_tel:       client_nom       || '',
       client_telephone_tel: client_telephone || '',
       mode_paiement:        req.body.mode_paiement || 'cash',
-      
     });
 
     await livraison.populate('client', 'nom email telephone');
@@ -115,7 +114,36 @@ exports.getStats = async (req, res) => {
     const resultatCAJour = await Delivery.aggregate([{ $match: { statut: 'livre', createdAt: { $gte: aujourd } } }, { $group: { _id: null, total: { $sum: '$prix' } } }]);
     const caAujourdhui = resultatCAJour[0]?.total || 0;
     const livreursActifs = await User.countDocuments({ role: 'livreur', actif: true });
-    res.status(200).json({ success: true, stats: { total, enAttente, enCours, enLivraison, livrees, annulees, chiffreAffaires, caAujourdhui, livreursActifs, dateFiltre: date || null } });
+
+    // ── Stats par jour (7 derniers jours) ──────────────────────────────────
+    const sept = new Date(); sept.setDate(sept.getDate() - 6); sept.setHours(0, 0, 0, 0);
+    const statsParJour = await Delivery.aggregate([
+      { $match: { statut: 'livre', createdAt: { $gte: sept } } },
+      { $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          ca: { $sum: '$prix' }, nb: { $sum: 1 }
+      }},
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, date: '$_id', ca: 1, nb: 1 } }
+    ]);
+
+    // ── Top livreurs (5 premiers) ───────────────────────────────────────────
+    const topLivreurs = await Delivery.aggregate([
+      { $match: { statut: 'livre' } },
+      { $group: { _id: '$livreur', nbLivraisons: { $sum: 1 }, ca: { $sum: '$prix' } } },
+      { $sort: { nbLivraisons: -1 } },
+      { $limit: 5 },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'info' } },
+      { $unwind: { path: '$info', preserveNullAndEmptyArrays: true } },
+      { $project: { nom: '$info.nom', nbLivraisons: 1, ca: 1 } }
+    ]);
+
+    res.status(200).json({ success: true, stats: {
+      total, enAttente, enCours, enLivraison, livrees, annulees,
+      chiffreAffaires, caAujourdhui, livreursActifs,
+      statsParJour, topLivreurs,
+      dateFiltre: date || null
+    }});
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../screens/auth/login_screen.dart';
@@ -18,6 +20,9 @@ class _HomeAdminState extends State<HomeAdmin> {
 
   Map<String, dynamic> _stats           = {};
   bool _chargementStats                 = true;
+  List<Map<String, dynamic>> _statsJours = []; // CA par jour sur 7 jours
+  List<Map<String, dynamic>> _topLivreurs = []; // top livreurs
+  bool _exportEnCours                   = false;
   List<dynamic> _utilisateurs           = [];
   bool _chargementUsers                 = true;
   String _filtreRole                    = 'tous';
@@ -47,9 +52,57 @@ class _HomeAdminState extends State<HomeAdmin> {
 
   Future<void> _chargerStats() async {
     setState(() => _chargementStats = true);
-    try { final r = await ApiService.getStats(); if (r['success'] == true) setState(() { _stats = r['stats']; _chargementStats = false; }); }
-    catch (_) { if (mounted) setState(() => _chargementStats = false); }
+    try {
+      final r = await ApiService.getStats();
+      if (r['success'] == true && mounted) {
+        final stats = r['stats'] as Map<String, dynamic>;
+        // Construire graphique 7 jours depuis statsParJour si disponible
+        final jours = stats['statsParJour'] as List<dynamic>? ?? [];
+        final top   = stats['topLivreurs']  as List<dynamic>? ?? [];
+        setState(() {
+          _stats       = stats;
+          _statsJours  = jours.map((j) => Map<String, dynamic>.from(j as Map)).toList();
+          _topLivreurs = top.map((t)  => Map<String, dynamic>.from(t as Map)).toList();
+          _chargementStats = false;
+        });
+      }
+    } catch (_) { if (mounted) setState(() => _chargementStats = false); }
   }
+
+  // ── Export CSV des livraisons ────────────────────────────────────────────
+  Future<void> _exportCSV() async {
+    setState(() => _exportEnCours = true);
+    try {
+      List<dynamic> livs;
+      if (_toutesLivraisons.isNotEmpty) {
+        livs = _toutesLivraisons;
+      } else {
+        final r = await ApiService.toutesLesLivraisons();
+        livs = r['success'] == true ? (r['livraisons'] as List<dynamic>? ?? []) : <dynamic>[];
+      }
+
+      final sb = StringBuffer();
+      sb.writeln('ID,Statut,Client,Livreur,Depart,Arrivee,Prix,Date');
+      for (final l in livs) {
+        final m = l as Map<String, dynamic>;
+        final client  = (m['client']  is Map) ? (m['client']  as Map)['nom'] ?? '' : '';
+        final livreur = (m['livreur'] is Map) ? (m['livreur'] as Map)['nom'] ?? '' : '';
+        final id   = (m['_id'] as String? ?? '').substring(0, 8);
+        final prix = (m['prix'] as num?)?.toInt() ?? 0;
+        final date = (m['createdAt'] as String? ?? '').split('T').first;
+        sb.writeln('$id,${m['statut']},${_csvEscape(client as String)},${_csvEscape(livreur as String)},'
+            '${_csvEscape(m['adresse_depart'] as String? ?? '')},'
+            '${_csvEscape(m['adresse_arrivee'] as String? ?? '')},$prix,$date');
+      }
+
+      await Share.share(
+        sb.toString(),
+        subject: 'Livraisons Tchira Express — ${DateTime.now().toString().split(" ").first}',
+      );
+    } finally { if (mounted) setState(() => _exportEnCours = false); }
+  }
+
+  String _csvEscape(String s) => s.contains(',') ? '"$s"' : s;
 
   Future<void> _chargerUtilisateurs({String? role}) async {
     setState(() => _chargementUsers = true);
@@ -249,17 +302,32 @@ class _HomeAdminState extends State<HomeAdmin> {
 
   Widget _ongletDashboard() {
     if (_chargementStats) return Column(children: [_header('Dashboard 📊'), const Expanded(child: Center(child: CircularProgressIndicator()))]);
-    return Column(children: [_header('Dashboard 📊'),
+    return Column(children: [
+      _header('Dashboard 📊', action: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (_exportEnCours)
+          const Padding(padding: EdgeInsets.only(right: 12), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
+        else
+          IconButton(icon: const Icon(Icons.file_download_outlined, color: Colors.white, size: 22),
+              tooltip: 'Exporter CSV', onPressed: _exportCSV),
+        IconButton(icon: const Icon(Icons.refresh, color: Colors.white, size: 20), onPressed: _chargerStats),
+      ])),
       Expanded(child: RefreshIndicator(onRefresh: _chargerStats, child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.all(16),
-        child: Column(children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── CA Cards ────────────────────────────────────────────────────────
           Row(children: [
-            Expanded(child: _carteCA(titre: 'CA Total', montant: _stats['chiffreAffaires'] ?? 0, icone: Icons.account_balance_wallet, couleur: const Color(0xFF0D7377))),
+            Expanded(child: _carteCA(titre: 'CA Total', montant: _stats['chiffreAffaires'] ?? 0,
+                icone: Icons.account_balance_wallet, couleur: const Color(0xFF0D7377))),
             const SizedBox(width: 12),
-            Expanded(child: _carteCA(titre: 'CA Aujourd\'hui', montant: _stats['caAujourdhui'] ?? 0, icone: Icons.today, couleur: const Color(0xFFF97316))),
+            Expanded(child: _carteCA(titre: 'Aujourd\'hui', montant: _stats['caAujourdhui'] ?? 0,
+                icone: Icons.today, couleur: const Color(0xFFF97316))),
           ]),
           const SizedBox(height: 12),
-          GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.6, children: [
+
+          // ── Grille statuts ───────────────────────────────────────────────────
+          GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.6, children: [
             _carteStat('Total', _stats['total'] ?? 0, Colors.blueGrey, Icons.all_inbox),
             _carteStat('En attente', _stats['enAttente'] ?? 0, Colors.orange, Icons.hourglass_top),
             _carteStat('En cours', _stats['enCours'] ?? 0, const Color(0xFF0D7377), Icons.sync),
@@ -267,10 +335,144 @@ class _HomeAdminState extends State<HomeAdmin> {
             _carteStat('Livrées', _stats['livrees'] ?? 0, Colors.green, Icons.check_circle),
             _carteStat('Annulées', _stats['annulees'] ?? 0, Colors.red, Icons.cancel),
           ]),
+          const SizedBox(height: 20),
+
+          // ── Graphique CA 7 jours ─────────────────────────────────────────────
+          _graphiqueCA(),
+          const SizedBox(height: 20),
+
+          // ── Top Livreurs ─────────────────────────────────────────────────────
+          if (_topLivreurs.isNotEmpty) ...[
+            _topLivreursWidget(),
+            const SizedBox(height: 16),
+          ],
         ]),
       ))),
     ]);
   }
+
+  // ── Graphique fl_chart ──────────────────────────────────────────────────────
+  Widget _graphiqueCA() {
+    final hasData = _statsJours.isNotEmpty;
+    // Données factices si API ne retourne pas encore statsParJour
+    final spots = hasData
+        ? _statsJours.asMap().entries.map((e) {
+            final ca = (e.value['ca'] as num?)?.toDouble() ?? 0;
+            return FlSpot(e.key.toDouble(), ca);
+          }).toList()
+        : [FlSpot(0, 0), FlSpot(1, 0), FlSpot(2, 0), FlSpot(3, 0), FlSpot(4, 0), FlSpot(5, 0), FlSpot(6, 0)];
+
+    final labels = hasData
+        ? _statsJours.map((j) {
+            final d = (j['date'] as String? ?? '').split('-');
+            return d.length >= 3 ? '${d[2]}/${d[1]}' : '';
+          }).toList()
+        : ['J-6','J-5','J-4','J-3','J-2','J-1','Auj'];
+
+    final maxY = spots.fold(0.0, (m, s) => s.y > m ? s.y : m);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('📈 CA — 7 derniers jours',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0D7377))),
+          Text('FCFA', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
+        ]),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 160,
+          child: LineChart(LineChartData(
+            minY: 0, maxY: maxY > 0 ? maxY * 1.2 : 10000,
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              horizontalInterval: maxY > 0 ? (maxY / 4).ceilToDouble() : 2500,
+              getDrawingHorizontalLine: (v) => FlLine(color: Colors.grey.shade100, strokeWidth: 1)),
+            titlesData: FlTitlesData(
+              bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28,
+                  getTitlesWidget: (v, _) {
+                    final i = v.toInt();
+                    if (i < 0 || i >= labels.length) return const SizedBox.shrink();
+                    return Padding(padding: const EdgeInsets.only(top: 6),
+                        child: Text(labels[i], style: TextStyle(fontSize: 10, color: Colors.grey.shade500)));
+                  })),
+              leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 42,
+                  getTitlesWidget: (v, _) => Text(_fmtK(v),
+                      style: TextStyle(fontSize: 9, color: Colors.grey.shade400)))),
+              topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            ),
+            borderData: FlBorderData(show: false),
+            lineTouchData: LineTouchData(
+              touchTooltipData: LineTouchTooltipData(
+                getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+                    '${_fmt(s.y)} FCFA',
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))).toList())),
+            lineBarsData: [LineChartBarData(
+              spots: spots,
+              isCurved: true, curveSmoothness: 0.35,
+              color: const Color(0xFF0D7377),
+              barWidth: 2.5,
+              belowBarData: BarAreaData(show: true,
+                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                      colors: [const Color(0xFF0D7377).withValues(alpha: 0.25), const Color(0xFF0D7377).withValues(alpha: 0.0)])),
+              dotData: FlDotData(show: true,
+                  getDotPainter: (spot, _, _, _) => FlDotCirclePainter(radius: 3.5,
+                      color: Colors.white, strokeWidth: 2, strokeColor: const Color(0xFF0D7377))),
+            )],
+          )),
+        ),
+        if (!hasData)
+          Padding(padding: const EdgeInsets.only(top: 8),
+            child: Text('Les données s\'afficheront au fil des livraisons',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 11))),
+      ]),
+    );
+  }
+
+  String _fmtK(double v) {
+    if (v == 0) return '0';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}k';
+    return v.toStringAsFixed(0);
+  }
+
+  // ── Top Livreurs ────────────────────────────────────────────────────────────
+  Widget _topLivreursWidget() => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3))]),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('🏆 Top Livreurs', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0D7377))),
+      const SizedBox(height: 12),
+      ..._topLivreurs.asMap().entries.take(5).map((e) {
+        final i = e.key; final l = e.value;
+        final nom      = l['nom'] as String? ?? 'Livreur';
+        final nb       = (l['nbLivraisons'] as num?)?.toInt() ?? 0;
+        final ca       = (l['ca'] as num?)?.toInt() ?? 0;
+        final medals   = ['🥇','🥈','🥉'];
+        final medal    = i < medals.length ? medals[i] : '${i+1}.';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: i == 0 ? const Color(0xFFFEF3C7) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10)),
+          child: Row(children: [
+            Text(medal, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(nom, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              Text('$nb livraisons', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+            ])),
+            Text('${_fmt(ca)} FCFA',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
+                    color: i == 0 ? Colors.orange.shade700 : const Color(0xFF0D7377))),
+          ]));
+      }),
+    ]));
 
   Widget _ongletComptes() {
     return Column(children: [

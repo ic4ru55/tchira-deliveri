@@ -86,12 +86,10 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
     setState(() => _creationEnCours = true);
     final provider = context.read<LivraisonProvider>(); final messenger = ScaffoldMessenger.of(context);
     try {
-      // ✅ Correction ligne 91 : remplacer 'succes' par 'livraisonId'
-      final livraisonId = await provider.creerLivraison(adresseDepart: _departCtrl.text.trim(), adresseArrivee: _arriveeCtrl.text.trim(), categorie: _categorieSelectionnee!, zoneCode: _zoneSelectionnee!, prix: _prixTotal ?? 0, prixBase: _prixBase ?? 0, fraisZone: _fraisZone ?? 0, description: _descCtrl.text.trim());
+      final String? livraisonId = await provider.creerLivraison(adresseDepart: _departCtrl.text.trim(), adresseArrivee: _arriveeCtrl.text.trim(), categorie: _categorieSelectionnee!, zoneCode: _zoneSelectionnee!, prix: _prixTotal ?? 0, prixBase: _prixBase ?? 0, fraisZone: _fraisZone ?? 0, description: _descCtrl.text.trim());
       if (!mounted) return;
-      // ✅ Vérification : si l'ID n'est pas null, c'est un succès
       if (livraisonId != null) {
-        if (_livreurSelectionne != null && provider.mesLivraisons.isNotEmpty) await ApiService.assignerLivreur(livraisonId: provider.mesLivraisons.first.id, livreurId: _livreurSelectionne!);
+        if (_livreurSelectionne != null) await ApiService.assignerLivreur(livraisonId: livraisonId, livreurId: _livreurSelectionne!);
         _viderFormulaire(); messenger.showSnackBar(const SnackBar(content: Text('✅ Commande créée !'), backgroundColor: Colors.green));
         setState(() => _ongletActif = 1); if (mounted) _chargerLivraisons();
       } else messenger.showSnackBar(const SnackBar(content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
