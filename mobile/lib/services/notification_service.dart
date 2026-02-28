@@ -50,15 +50,32 @@ class NotificationService {
 
     // ✅ FOREGROUND — app ouverte : Firebase ne montre rien automatiquement
     // On intercepte et on affiche via flutter_local_notifications
+    // Gère les messages avec "notification" ET les messages data-only
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('📩 Notif foreground : ${message.notification?.title}');
-      final notif = message.notification;
-      if (notif == null) return;
-      afficher(
-        titre:   notif.title ?? '',
-        corps:   notif.body  ?? '',
-        payload: message.data['type'] ?? '',
-      );
+      debugPrint('📩 Notif foreground reçue : ${message.notification?.title} | data: ${message.data}');
+
+      final notif  = message.notification;
+      final data   = message.data;
+
+      // ── Cas 1 : message classique avec section notification ──────────────
+      if (notif != null) {
+        afficher(
+          titre:   notif.title ?? data['titre'] ?? 'Tchira Express',
+          corps:   notif.body  ?? data['corps']  ?? '',
+          payload: data['type'] ?? '',
+        );
+        return;
+      }
+
+      // ── Cas 2 : message data-only (pas de section notification) ──────────
+      // Le backend envoie parfois uniquement data: { type, titre, corps, ... }
+      if (data.containsKey('titre') || data.containsKey('type')) {
+        afficher(
+          titre:   data['titre'] ?? _titrePourType(data['type'] ?? ''),
+          corps:   data['corps'] ?? data['body'] ?? '',
+          payload: data['type']  ?? '',
+        );
+      }
     });
 
     // ✅ BACKGROUND — app minimisée, notification tappée
@@ -80,6 +97,17 @@ class NotificationService {
       badge: true,
       sound: true,
     );
+  }
+
+  // ─── Titre par défaut selon le type ─────────────────────────────────────
+  static String _titrePourType(String type) {
+    switch (type) {
+      case 'nouvelle_livraison': return '📦 Nouvelle mission !';
+      case 'livreur_assigne':   return '🚴 Livreur assigné';
+      case 'statut_change':     return '📬 Mise à jour livraison';
+      case 'paiement':          return '💰 Paiement';
+      default:                  return '🔔 Tchira Express';
+    }
   }
 
   // ─── Afficher une notification locale ────────────────────────────────────

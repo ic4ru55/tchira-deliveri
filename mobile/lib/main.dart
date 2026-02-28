@@ -12,6 +12,7 @@ import 'screens/client/home_client.dart';
 import 'screens/livreur/home_livreur.dart';
 import 'screens/receptionniste/home_receptionniste.dart';
 import 'screens/admin/home_admin.dart';
+import 'services/notification_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -22,6 +23,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // ✅ Initialiser les notifications (foreground + canaux Android)
+  await NotificationService.initialiser();
   runApp(const TchiraApp());
 }
 

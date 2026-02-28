@@ -108,27 +108,36 @@ class LivraisonProvider extends ChangeNotifier {
   // Si le livreur ferme l'app et la rouvre, on retrouve sa mission en cours.
   Future<void> chargerMissionActive() async {
     try {
-      final reponse = await ApiService.mesLivraisonsLivreur();
+      // ✅ Utiliser l'endpoint DÉDIÉ /mission-active
+      // (et non mon-historique qui retourne toutes les livraisons passées)
+      final reponse = await ApiService.missionActiveLivreur();
       if (reponse['success'] == true) {
-        final liste = reponse['livraisons'] as List? ?? [];
-        final active = liste.cast<Map<String, dynamic>>().firstWhere(
-          (l) => l['statut'] == 'en_cours' || l['statut'] == 'en_livraison',
-          orElse: () => <String, dynamic>{},
-        );
-        if (active.isNotEmpty) {
-          _livraisonActive = Livraison.fromJson(active);
+        final data = reponse['livraison'];
+        if (data != null && data is Map<String, dynamic>) {
+          // Il y a une mission active en cours
+          _livraisonActive = Livraison.fromJson(data);
           SocketService.rejoindrelivraison(_livraisonActive!.id);
-          // Écouter les mises à jour de statut via socket
           SocketService.ecouterStatut((statut) {
             if (_livraisonActive != null) {
               _livraisonActive = _livraisonActive!.copyWith(statut: statut);
               notifyListeners();
             }
           });
-          notifyListeners();
+        } else {
+          // ✅ Aucune mission active → on reset explicitement
+          _livraisonActive = null;
         }
+        notifyListeners();
+      } else {
+        // Erreur API → on reset pour ne pas bloquer l'écran
+        _livraisonActive = null;
+        notifyListeners();
       }
-    } catch (_) {}
+    } catch (_) {
+      // Erreur réseau → on reset
+      _livraisonActive = null;
+      notifyListeners();
+    }
   }
 
   // ─── LIVREUR : accepter une livraison ─────────────────────────────────────
