@@ -16,7 +16,8 @@ class HomeReceptionniste extends StatefulWidget {
 
 class _HomeReceptionnisteState extends State<HomeReceptionniste> {
   int _ongletActif = 0; // 0=Commandes 1=En cours 2=Paiements 3=Profil
-  final int _nbPreuves = 0; // badge sur onglet Paiements
+  final int _nbPreuves   = 0;  // badge sur onglet Paiements
+
   final _departCtrl    = TextEditingController();
   final _arriveeCtrl   = TextEditingController();
   final _descCtrl      = TextEditingController();
@@ -77,72 +78,24 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
     } finally { if (mounted) setState(() => _calculEnCours = false); }
   }
 
-    Future<void> _creerCommande() async {
-    if (_nomClientCtrl.text.isEmpty || _telClientCtrl.text.isEmpty) { 
-      _snack('Remplis le nom et le téléphone du client', Colors.red); 
-      return; 
-    }
-    if (_departCtrl.text.isEmpty || _arriveeCtrl.text.isEmpty) { 
-      _snack('Remplis les adresses', Colors.red); 
-      return; 
-    }
-    if (_categorieSelectionnee == null || _zoneSelectionnee == null) { 
-      _snack('Sélectionne une catégorie et une zone', Colors.red); 
-      return; 
-    }
-    if (_surDevis) { 
-      _snack('Contacte l\'admin pour ce type de colis', Colors.orange); 
-      return; 
-    }
-    
+  Future<void> _creerCommande() async {
+    if (_nomClientCtrl.text.isEmpty || _telClientCtrl.text.isEmpty) { _snack('Remplis le nom et le téléphone du client', Colors.red); return; }
+    if (_departCtrl.text.isEmpty || _arriveeCtrl.text.isEmpty) { _snack('Remplis les adresses', Colors.red); return; }
+    if (_categorieSelectionnee == null || _zoneSelectionnee == null) { _snack('Sélectionne une catégorie et une zone', Colors.red); return; }
+    if (_surDevis) { _snack('Contacte l\'admin pour ce type de colis', Colors.orange); return; }
     setState(() => _creationEnCours = true);
-    final provider = context.read<LivraisonProvider>(); 
-    final messenger = ScaffoldMessenger.of(context);
-    
+    final provider = context.read<LivraisonProvider>(); final messenger = ScaffoldMessenger.of(context);
     try {
-      // ✅ Correction : la méthode retourne un String? (ID) ou null en cas d'échec
-      final livraisonId = await provider.creerLivraison(
-        adresseDepart: _departCtrl.text.trim(), 
-        adresseArrivee: _arriveeCtrl.text.trim(), 
-        categorie: _categorieSelectionnee!, 
-        zoneCode: _zoneSelectionnee!, 
-        prix: _prixTotal ?? 0, 
-        prixBase: _prixBase ?? 0, 
-        fraisZone: _fraisZone ?? 0, 
-        description: _descCtrl.text.trim()
-      );
-      
+      // ✅ Correction ligne 91 : remplacer 'succes' par 'livraisonId'
+      final livraisonId = await provider.creerLivraison(adresseDepart: _departCtrl.text.trim(), adresseArrivee: _arriveeCtrl.text.trim(), categorie: _categorieSelectionnee!, zoneCode: _zoneSelectionnee!, prix: _prixTotal ?? 0, prixBase: _prixBase ?? 0, fraisZone: _fraisZone ?? 0, description: _descCtrl.text.trim());
       if (!mounted) return;
-      
-      // ✅ Vérification : si livraisonId n'est pas null, c'est un succès
+      // ✅ Vérification : si l'ID n'est pas null, c'est un succès
       if (livraisonId != null) {
-        if (_livreurSelectionne != null) {
-          if (provider.mesLivraisons.isNotEmpty) {
-            final premiereLivraison = provider.mesLivraisons.first;
-            await ApiService.assignerLivreur(
-              livraisonId: premiereLivraison.id, 
-              livreurId: _livreurSelectionne!
-            );
-          }
-        }
-        
-        _viderFormulaire(); 
-        messenger.showSnackBar(const SnackBar(
-          content: Text('✅ Commande créée !'), 
-          backgroundColor: Colors.green
-        ));
-        
-        setState(() => _ongletActif = 1); 
-        if (mounted) _chargerLivraisons();
-      } else {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('❌ Erreur lors de la création'), 
-          backgroundColor: Colors.red
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _creationEnCours = false);
-    }
+        if (_livreurSelectionne != null && provider.mesLivraisons.isNotEmpty) await ApiService.assignerLivreur(livraisonId: provider.mesLivraisons.first.id, livreurId: _livreurSelectionne!);
+        _viderFormulaire(); messenger.showSnackBar(const SnackBar(content: Text('✅ Commande créée !'), backgroundColor: Colors.green));
+        setState(() => _ongletActif = 1); if (mounted) _chargerLivraisons();
+      } else messenger.showSnackBar(const SnackBar(content: Text('❌ Erreur lors de la création'), backgroundColor: Colors.red));
+    } finally { if (mounted) setState(() => _creationEnCours = false); }
   }
 
   Future<void> _assignerLivreur(String livId, String livreurId) async {
@@ -224,41 +177,81 @@ class _HomeReceptionnisteState extends State<HomeReceptionniste> {
 
   Widget _navbar() {
     final items = [
-      {'icon': Icons.add_circle_outline, 'iconSel': Icons.add_circle,     'label': 'Commandes'},
-      {'icon': Icons.list_alt_outlined,  'iconSel': Icons.list_alt,        'label': 'En cours'},
-      {'icon': Icons.verified_outlined,  'iconSel': Icons.verified,        'label': 'Paiements', 'badge': _nbPreuves},
-      {'icon': Icons.person_outline,     'iconSel': Icons.person,          'label': 'Profil'},
+      {'icon': Icons.add_circle_outline, 'iconSel': Icons.add_circle,  'label': 'Commandes',  'badge': 0},
+      {'icon': Icons.list_alt_outlined,  'iconSel': Icons.list_alt,    'label': 'En cours',   'badge': 0},
+      {'icon': Icons.verified_outlined,  'iconSel': Icons.verified,    'label': 'Paiements',  'badge': _nbPreuves},
+      {'icon': Icons.person_outline,     'iconSel': Icons.person,      'label': 'Profil',     'badge': 0},
     ];
     return Container(
-      decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, -4))], borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
-      child: SafeArea(top: false, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: List.generate(items.length, (i) {
-          final sel = _ongletActif == i;
-          return GestureDetector(onTap: () => setState(() => _ongletActif = i), behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              decoration: BoxDecoration(color: sel ? const Color(0xFF0D7377).withValues(alpha: 0.12) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Stack(clipBehavior: Clip.none, children: [
-                  Icon(sel ? items[i]['iconSel'] as IconData : items[i]['icon'] as IconData,
-                      color: sel ? const Color(0xFF0D7377) : Colors.grey, size: 24),
-                  if ((items[i]['badge'] as int? ?? 0) > 0)
-                    Positioned(right: -6, top: -4,
-                      child: Container(
-                        width: 16, height: 16,
-                        decoration: const BoxDecoration(
-                            color: Colors.red, shape: BoxShape.circle),
-                        child: Center(child: Text(
-                          '${items[i]['badge']}',
-                          style: const TextStyle(color: Colors.white,
-                              fontSize: 9, fontWeight: FontWeight.bold))))),
-                ]),
-                const SizedBox(height: 2),
-                Text(items[i]['label'] as String,
-                    style: TextStyle(fontSize: 11,
-                        fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
-                        color: sel ? const Color(0xFF0D7377) : Colors.grey)),
-              ])));
-        })))),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16, offset: const Offset(0, -4))],
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+      child: SafeArea(top: false, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // ── Indicateur scrollable ─────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(items.length, (i) => AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width:  _ongletActif == i ? 20 : 6,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _ongletActif == i
+                    ? const Color(0xFF0D7377) : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))))),
+        ),
+        // ── Onglets ───────────────────────────────────────────────────────────
+        SizedBox(
+          height: 64,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            itemCount: items.length,
+            itemBuilder: (_, i) {
+              final sel   = _ongletActif == i;
+              final badge = items[i]['badge'] as int? ?? 0;
+              return GestureDetector(
+                onTap: () => setState(() => _ongletActif = i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel ? const Color(0xFF0D7377) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: sel ? null : Border.all(color: Colors.grey.shade200)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Stack(clipBehavior: Clip.none, children: [
+                      Icon(
+                        sel ? items[i]['iconSel'] as IconData
+                            : items[i]['icon'] as IconData,
+                        color: sel ? Colors.white : Colors.grey.shade600,
+                        size: 18),
+                      if (badge > 0)
+                        Positioned(right: -6, top: -4,
+                          child: Container(
+                            width: 14, height: 14,
+                            decoration: const BoxDecoration(
+                                color: Colors.red, shape: BoxShape.circle),
+                            child: Center(child: Text('$badge',
+                                style: const TextStyle(color: Colors.white,
+                                    fontSize: 8, fontWeight: FontWeight.bold))))),
+                    ]),
+                    const SizedBox(width: 6),
+                    Text(items[i]['label'] as String,
+                        style: TextStyle(fontSize: 12,
+                            fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                            color: sel ? Colors.white : Colors.grey.shade600)),
+                  ]),
+                ),
+              );
+            },
+          ),
+        ),
+      ])),
     );
   }
 

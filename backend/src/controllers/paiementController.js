@@ -27,10 +27,11 @@ exports.soumettrePreuve = async (req, res) => {
     const staff = await User.find({ role: { $in: ['receptionniste', 'admin'] }, actif: true });
     const promesses = staff
       .filter(s => s.fcm_token)
-      .map(s => envoyerNotification(s.fcm_token, {
-        title: '📸 Preuve de paiement reçue',
-        body:  `Livraison #${id.slice(-6).toUpperCase()} — vérification requise`,
-        data:  { type: 'preuve_paiement', livraison_id: id },
+      .map(s => envoyerNotification({
+        fcmToken: s.fcm_token,
+        titre:    '📸 Preuve de paiement reçue',
+        corps:    `Livraison #${id.slice(-6).toUpperCase()} — vérification requise`,
+        donnees:  { type: 'preuve_paiement', livraison_id: id },
       }).catch(() => {}));
     await Promise.all(promesses);
 
@@ -62,10 +63,11 @@ exports.validerPreuve = async (req, res) => {
 
       // Notifier le client
       if (liv.client?.fcm_token) {
-        await envoyerNotification(liv.client.fcm_token, {
-          title: '✅ Paiement confirmé !',
-          body:  'Votre paiement a été vérifié. Un livreur va prendre en charge votre colis.',
-          data:  { type: 'paiement_verifie', livraison_id: id },
+        await envoyerNotification({
+          fcmToken: liv.client.fcm_token,
+          titre:    '✅ Paiement confirmé !',
+          corps:    'Votre paiement a été vérifié. Un livreur va prendre en charge votre colis.',
+          donnees:  { type: 'paiement_verifie', livraison_id: id },
         }).catch(() => {});
       }
 
@@ -75,10 +77,11 @@ exports.validerPreuve = async (req, res) => {
 
       // Notifier le client avec motif
       if (liv.client?.fcm_token) {
-        await envoyerNotification(liv.client.fcm_token, {
-          title: '❌ Preuve de paiement rejetée',
-          body:  motif || "La preuve soumise n'est pas valide. Veuillez en soumettre une nouvelle.",
-          data:  { type: 'paiement_rejete', livraison_id: id },
+        await envoyerNotification({
+          fcmToken: liv.client.fcm_token,
+          titre:    '❌ Preuve de paiement rejetée',
+          corps:    motif || "La preuve soumise n'est pas valide. Veuillez en soumettre une nouvelle.",
+          donnees:  { type: 'paiement_rejete', livraison_id: id },
         }).catch(() => {});
       }
     }
@@ -113,10 +116,11 @@ exports.confirmerCash = async (req, res) => {
     const admins = await User.find({ role: 'admin', actif: true });
     await Promise.all(
       admins.filter(a => a.fcm_token).map(a =>
-        envoyerNotification(a.fcm_token, {
-          title: '💵 Paiement cash confirmé',
-          body:  `Livraison #${id.slice(-6).toUpperCase()} — cash reçu par le livreur`,
-          data:  { type: 'cash_confirme', livraison_id: id },
+        envoyerNotification({
+          fcmToken: a.fcm_token,
+          titre:    '💵 Paiement cash confirmé',
+          corps:    `Livraison #${id.slice(-6).toUpperCase()} — cash reçu par le livreur`,
+          donnees:  { type: 'cash_confirme', livraison_id: id },
         }).catch(() => {})
       )
     );
@@ -181,10 +185,11 @@ exports.verifierTimerAssignation = async () => {
       const receps = await User.find({ role: { $in: ['receptionniste', 'admin'] }, actif: true });
       await Promise.all(
         receps.filter(r => r.fcm_token).map(r =>
-          envoyerNotification(r.fcm_token, {
-            title: '⚠️ Mission non assignée depuis 30 min',
-            body:  `Livraison #${liv._id.toString().slice(-6).toUpperCase()} attend toujours un livreur`,
-            data:  { type: 'timer_assignation', livraison_id: liv._id.toString() },
+          envoyerNotification({
+            fcmToken: r.fcm_token,
+            titre:    '⚠️ Mission non assignée depuis 30 min',
+            corps:    `Livraison #${liv._id.toString().slice(-6).toUpperCase()} attend toujours un livreur`,
+            donnees:  { type: 'timer_assignation', livraison_id: liv._id.toString() },
           }).catch(() => {})
         )
       );

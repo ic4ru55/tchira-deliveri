@@ -20,20 +20,25 @@ class _HomeLibreurState extends State<HomeLibreur> {
   int    _ongletActif         = 0; // 0=Missions 1=Historique 2=Profil
   Timer? _timer;
   List<dynamic> _historique   = [];
-  bool _chargementHistorique  = true;
+  bool _chargementHistorique  = false; // false = afficher liste vide jusqu'au 1er chargement
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = context.read<LivraisonProvider>();
       provider.chargerLivraisonsDisponibles();
       provider.chargerMissionActive();
-      // ✅ Reprendre le GPS auto si mission en cours (ex: retour depuis MissionScreen)
+      // Reprendre GPS si mission déjà active
       _reprendreGpsAuto();
+      // Timer auto-refresh missions toutes les 5s
       _timer = Timer.periodic(const Duration(seconds: 5), (_) {
         if (mounted && _ongletActif == 0) {
           context.read<LivraisonProvider>().chargerLivraisonsDisponibles(silencieux: true);
+        }
+        // Auto-refresh historique si onglet actif
+        if (mounted && _ongletActif == 1 && !_chargementHistorique) {
+          _chargerHistorique();
         }
       });
     });
@@ -172,7 +177,8 @@ class _HomeLibreurState extends State<HomeLibreur> {
             onTap: () {
                 setState(() => _ongletActif = i);
                 // ✅ Charger (ou recharger) l'historique à chaque visite de l'onglet
-                if (i == 1 && !_chargementHistorique) {
+                if (i == 1) {
+                  // Toujours recharger à chaque visite de l'onglet historique
                   _chargerHistorique();
                 }
               },
@@ -216,7 +222,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
             },
           child: Container(
             margin: const EdgeInsets.only(top: 0),
-            padding: const EdgeInsets.fromLTRB(20, 52, 20, 14),
+            padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 12, 20, 14),
             color: Colors.orange.shade700,
             child: Row(children: [
               const Icon(Icons.local_shipping, color: Colors.white, size: 22),
@@ -232,7 +238,7 @@ class _HomeLibreurState extends State<HomeLibreur> {
       else
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(24, 56, 24, 28),
+          padding: EdgeInsets.fromLTRB(24, MediaQuery.of(context).padding.top + 16, 24, 28),
           decoration: const BoxDecoration(color: Color(0xFF0D7377),
               borderRadius: BorderRadius.only(bottomLeft: Radius.circular(28), bottomRight: Radius.circular(28))),
           child: Row(children: [

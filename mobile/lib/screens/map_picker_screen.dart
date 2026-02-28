@@ -139,64 +139,86 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   // Gratuit, sans clé API, excellent coverage Afrique de l'Ouest
   void _onRechercheChanged(String texte) {
     _debounceTimer?.cancel();
-    if (texte.trim().length < 3) {
+    if (texte.trim().length < 2) {
       setState(() => _suggestions = []);
       return;
     }
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
       _rechercherLieux(texte.trim());
     });
+  }
+
+  // ─── Construire un label lisible depuis les données Nominatim ───────────────
+  String _labelDepuisResult(Map<String, dynamic> r) {
+    final addr = r['address'] as Map<String, dynamic>? ?? {};
+    // Priorité : route → quartier → ville → display_name tronqué
+    final route    = addr['road']       as String?;
+    final quartier = addr['quarter']    as String?
+                  ?? addr['suburb']     as String?
+                  ?? addr['neighbourhood'] as String?;
+    final ville    = addr['city']       as String?
+                  ?? addr['town']       as String?
+                  ?? addr['village']    as String?
+                  ?? addr['municipality'] as String?;
+    final commune  = addr['county']     as String?;
+
+    final parts = <String>[
+      ?route,
+      ?quartier,
+      if (ville    != null) ville
+      else ?commune,
+    ];
+    if (parts.isNotEmpty) return parts.join(', ');
+    // Fallback : les 3 premiers segments du display_name
+    return (r['display_name'] as String? ?? '').split(',').take(3).join(',').trim();
+  }
+
+  // ─── Appel Nominatim avec double tentative (restreinte puis élargie) ─────────
+  Future<List<dynamic>> _appelNominatim(String query, {bool restreint = true}) async {
+    // Viewbox centré sur Bobo-Dioulasso (lon: -4.30, lat: 11.18) ± ~100km
+    const viewbox = '-5.0,10.5,-3.5,11.8';
+    final params = <String, String>{
+      'q':              query,
+      'format':         'json',
+      'limit':          '8',
+      'addressdetails': '1',
+      'accept-language':'fr',
+      if (restreint) 'countrycodes': 'bf',
+      if (restreint) 'viewbox':      viewbox,
+      if (restreint) 'bounded':      '0',   // bounded=0 : viewbox est un biais, pas un filtre dur
+    };
+    final url = Uri.https('nominatim.openstreetmap.org', '/search', params);
+    final response = await http.get(url, headers: {
+      'User-Agent':      'TchiraExpress/1.0 (contact@tchiraexpress.com)',
+      'Accept-Language': 'fr',
+    }).timeout(const Duration(seconds: 6));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
+    return [];
   }
 
   Future<void> _rechercherLieux(String query) async {
     setState(() => _rechercheEnCours = true);
     try {
-      // ✅ Nominatim (OpenStreetMap) — 100% gratuit, aucune clé requise
-      // Biaisé sur le Burkina Faso avec viewbox Bobo-Dioulasso et countrycodes=bf
-      final encoded = Uri.encodeComponent(query);
-      final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search'
-        '?q=$encoded'
-        '&format=json'
-        '&limit=6'
-        '&countrycodes=bf'
-        '&accept-language=fr'
-        '&addressdetails=1',
-      );
+      // 1ère tentative : Burkina Faso + viewbox Bobo
+      List<dynamic> results = await _appelNominatim(query, restreint: true);
 
-      final response = await http.get(url, headers: {
-        // Nominatim exige un User-Agent identifiant l'app
-        'User-Agent': 'TchiraExpress/1.0 (contact@tchiraexpress.com)',
-        'Accept-Language': 'fr',
-      }).timeout(const Duration(seconds: 8));
+      // 2ème tentative si pas assez de résultats : recherche mondiale
+      if (results.length < 2) {
+        results = await _appelNominatim(query, restreint: false);
+      }
 
       if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final List<dynamic> results = jsonDecode(response.body);
-        setState(() {
-          _suggestions = results.map((r) {
-            final lat = double.tryParse(r['lat'].toString()) ?? 0.0;
-            final lon = double.tryParse(r['lon'].toString()) ?? 0.0;
-            // Construire un nom lisible depuis les détails d'adresse
-            final addr = r['address'] as Map<String, dynamic>? ?? {};
-            final parts = <String>[
-              if (addr['road'] != null)          addr['road'] as String,
-              if (addr['quarter'] != null)        addr['quarter'] as String
-              else if (addr['suburb'] != null)    addr['suburb'] as String,
-              if (addr['city'] != null)           addr['city'] as String
-              else if (addr['town'] != null)      addr['town'] as String
-              else if (addr['village'] != null)   addr['village'] as String,
-            ];
-            final nom = parts.isNotEmpty
-                ? parts.join(', ')
-                : (r['display_name'] as String).split(',').take(3).join(',');
-            return _Suggestion(nom: nom, position: LatLng(lat, lon));
-          }).toList();
-        });
-      }
+      setState(() {
+        _suggestions = results.map((r) {
+          final lat = double.tryParse(r['lat'].toString()) ?? 0.0;
+          final lon = double.tryParse(r['lon'].toString()) ?? 0.0;
+          return _Suggestion(nom: _labelDepuisResult(r as Map<String, dynamic>), position: LatLng(lat, lon));
+        }).toList();
+      });
     } catch (e) {
-      // Silencieux — la carte reste utilisable sans la recherche
+      if (mounted) setState(() => _suggestions = []);
     } finally {
       if (mounted) setState(() => _rechercheEnCours = false);
     }

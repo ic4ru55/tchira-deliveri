@@ -165,36 +165,76 @@ class _HomeAdminState extends State<HomeAdmin> {
 
   Widget _navbar() {
     final items = [
-      {'icon': Icons.dashboard_outlined, 'iconSel': Icons.dashboard,    'label': 'Dashboard'},
-      {'icon': Icons.people_outline,     'iconSel': Icons.people,       'label': 'Comptes'},
-      {'icon': Icons.list_alt_outlined,  'iconSel': Icons.list_alt,     'label': 'Livraisons'},
-      {'icon': Icons.price_change_outlined,'iconSel': Icons.price_change,'label': 'Tarifs'},
-      {'icon': Icons.verified_outlined,  'iconSel': Icons.verified,     'label': 'Paiements'},
-      {'icon': Icons.person_outline,     'iconSel': Icons.person,       'label': 'Profil'},
+      {'icon': Icons.dashboard_outlined,    'iconSel': Icons.dashboard,     'label': 'Dashboard'},
+      {'icon': Icons.people_outline,        'iconSel': Icons.people,        'label': 'Comptes'},
+      {'icon': Icons.list_alt_outlined,     'iconSel': Icons.list_alt,      'label': 'Livraisons'},
+      {'icon': Icons.price_change_outlined, 'iconSel': Icons.price_change,  'label': 'Tarifs'},
+      {'icon': Icons.verified_outlined,     'iconSel': Icons.verified,      'label': 'Paiements'},
+      {'icon': Icons.person_outline,        'iconSel': Icons.person,        'label': 'Profil'},
     ];
     return Container(
-      decoration: BoxDecoration(color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, -4))],
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
-      child: SafeArea(top: false, child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: List.generate(items.length, (i) {
-          final sel = _ongletActif == i;
-          return GestureDetector(
-            onTap: () => setState(() => _ongletActif = i),
-            behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: sel ? const Color(0xFF0D7377).withValues(alpha: 0.12) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(sel ? items[i]['iconSel'] as IconData : items[i]['icon'] as IconData, color: sel ? const Color(0xFF0D7377) : Colors.grey, size: 22),
-                const SizedBox(height: 2),
-                Text(items[i]['label'] as String, style: TextStyle(fontSize: 10, fontWeight: sel ? FontWeight.w600 : FontWeight.normal, color: sel ? const Color(0xFF0D7377) : Colors.grey)),
-              ]),
-            ),
-          );
-        })),
-      )),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16, offset: const Offset(0, -4))],
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+      child: SafeArea(top: false, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // ── Indicateur position scrollable ────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(items.length, (i) => AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width:  _ongletActif == i ? 20 : 6,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _ongletActif == i
+                    ? const Color(0xFF0D7377) : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2)),
+            ))),
+        ),
+        // ── Onglets scrollables ───────────────────────────────────────────────
+        SizedBox(
+          height: 64,
+          child: ListView.builder(
+            scrollDirection:  Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            itemCount: items.length,
+            itemBuilder: (_, i) {
+              final sel = _ongletActif == i;
+              return GestureDetector(
+                onTap: () => setState(() => _ongletActif = i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel
+                        ? const Color(0xFF0D7377) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: sel ? null : Border.all(
+                        color: Colors.grey.shade200, width: 1)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                      sel ? items[i]['iconSel'] as IconData
+                          : items[i]['icon'] as IconData,
+                      color: sel ? Colors.white : Colors.grey.shade600,
+                      size: 18),
+                    const SizedBox(width: 6),
+                    Text(
+                      items[i]['label'] as String,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                        color: sel ? Colors.white : Colors.grey.shade600)),
+                  ]),
+                ),
+              );
+            },
+          ),
+        ),
+      ])),
     );
   }
 

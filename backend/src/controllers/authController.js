@@ -125,3 +125,56 @@ exports.moi = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// ─── METTRE À JOUR PROFIL ─────────────────────────────────────────────────────
+exports.mettreAJourProfil = async (req, res) => {
+  try {
+    const { nom, telephone, photo } = req.body;
+    const updates = {};
+    if (nom) updates.nom = nom.trim();
+    if (photo) {
+      // Valider taille base64 (max ~5MB)
+      if (photo.length > 7_000_000)
+        return res.status(400).json({ success: false, message: 'Photo trop lourde (max 5MB)' });
+      updates.photo = photo;
+    }
+    if (telephone) {
+      // Validation téléphone inline
+      let t = telephone.toString().trim().replace(/[\s\-().]/g, '');
+      if      (t.startsWith('+226'))                    { t = t.slice(4);  }
+      else if (t.startsWith('00226'))                   { t = t.slice(5);  }
+      else if (t.startsWith('226') && t.length === 11)  { t = t.slice(3);  }
+      if (!/^\d{8}$/.test(t))
+        return res.status(400).json({ success: false, message: 'Numéro invalide' });
+      updates.telephone = `+226${t}`;
+    }
+    const user = await User.findByIdAndUpdate(
+      req.user.id, updates, { new: true, select: '-mot_de_passe' }
+    );
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─── CHANGER MOT DE PASSE ─────────────────────────────────────────────────────
+exports.changerMotDePasse = async (req, res) => {
+  try {
+    const { ancien_mot_de_passe, nouveau_mot_de_passe } = req.body;
+    if (!ancien_mot_de_passe || !nouveau_mot_de_passe)
+      return res.status(400).json({ success: false, message: 'Les deux mots de passe sont requis' });
+    if (nouveau_mot_de_passe.length < 6)
+      return res.status(400).json({ success: false, message: 'Minimum 6 caractères' });
+
+    const user = await User.findById(req.user.id).select('+mot_de_passe');
+    const correct = await user.verifierMotDePasse(ancien_mot_de_passe);
+    if (!correct)
+      return res.status(401).json({ success: false, message: 'Ancien mot de passe incorrect' });
+
+    user.mot_de_passe = nouveau_mot_de_passe;
+    await user.save(); // le middleware pre-save hashera automatiquement
+    res.json({ success: true, message: 'Mot de passe modifié avec succès' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
