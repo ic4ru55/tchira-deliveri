@@ -30,6 +30,8 @@ exports.creerLivraison = async (req, res) => {
       frais_zone:          frais_zone          || 0,
       client_nom_tel:       client_nom       || '',
       client_telephone_tel: client_telephone || '',
+      mode_paiement:        req.body.mode_paiement || 'cash',
+      
     });
 
     await livraison.populate('client', 'nom email telephone');

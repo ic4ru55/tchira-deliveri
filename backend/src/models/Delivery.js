@@ -88,34 +88,34 @@ const DeliverySchema = new mongoose.Schema(
     // ───────────── PATCH AJOUTÉ ─────────────
 
     mode_paiement: {
-      type: String,
-      enum: ['om', 'cash'],
-      default: 'cash',
-    },
+    type:    String,
+    enum:    ['om', 'cash'],
+    default: 'cash',
+  },
 
-    statut_paiement: {
-      type: String,
-      enum: ['non_requis', 'preuve_soumise', 'verifie', 'rejete'],
-      default: 'non_requis',
-    },
+  statut_paiement: {
+    type:    String,
+    enum:    ['non_requis', 'preuve_soumise', 'verifie', 'rejete'],
+    default: 'non_requis',
+  },
 
-    preuve_paiement: {
-      data:        { type: String },
-      soumis_le:   { type: Date },
-      verifie_le:  { type: Date },
-      verifie_par: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-      motif_rejet: { type: String },
-    },
+  preuve_paiement: {
+    data:        { type: String },   // base64 capture OM ou photo cash
+    soumis_le:   { type: Date },
+    verifie_le:  { type: Date },
+    verifie_par: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    motif_rejet: { type: String },
+  },
 
-    preuve_livraison: {
-      data:     { type: String },
-      prise_le: { type: Date },
-    },
+  preuve_livraison: {
+    data:     { type: String },      // base64 photo prise par le livreur à la remise
+    prise_le: { type: Date },
+  },
 
-    alerte_timer_envoyee: {
-      type: Boolean,
-      default: false,
-    },
+  alerte_timer_envoyee: {
+    type:    Boolean,
+    default: false,
+  },
 
     // ───────────── FIN PATCH ─────────────
 
