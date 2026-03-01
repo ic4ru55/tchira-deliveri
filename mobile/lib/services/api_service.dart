@@ -251,8 +251,8 @@ class ApiService {
       final response = await http.put(
         Uri.parse('$baseUrl/paiements/$livraisonId/valider'),
         headers: await _headers(),
-        // ✅ Correction ligne 254 : suppression du '?' inutile
-        body: jsonEncode({ 'action': action, 'motif': motif }),
+        body: jsonEncode(<String, dynamic>{'action': action}
+            ..addAll(motif != null ? {'motif': motif} : {})),
       ).timeout(const Duration(seconds: 10));
       return _handleResponse(response);
     } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
@@ -267,8 +267,9 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl/paiements/$livraisonId/cash'),
         headers: await _headers(),
-        // ✅ Correction ligne 269 : suppression du '?' inutile
-        body: jsonEncode({ 'photo': photoBase64 }),
+        body: jsonEncode(photoBase64 != null
+            ? <String, dynamic>{'photo': photoBase64}
+            : <String, dynamic>{}),
       ).timeout(const Duration(seconds: 30));
       return _handleResponse(response);
     } catch (e) { return {'success': false, 'message': 'Connexion impossible'}; }
@@ -600,4 +601,55 @@ class ApiService {
       return {'success': false, 'message': 'Connexion impossible'};
     }
   }
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONFIG — Numéro OM et paramètres globaux
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Récupère la config globale (numéro OM, nom compte, etc.)
+  /// Appelé par le client avant d'afficher l'écran de paiement OM
+  static Future<Map<String, dynamic>> getConfig() async {
+    try {
+      final r = await http.get(
+        Uri.parse('$baseUrl/config'),
+        headers: await _headers(),
+      );
+      return _handleResponse(r);
+    } catch (_) {
+      // Fallback : retourner les valeurs par défaut si pas de réseau
+      return {
+        'success':       true,
+        'om_numero':     '72007342',
+        'om_nom_compte': 'Tchira Express',
+        'om_actif':      true,
+      };
+    }
+  }
+
+  /// Met à jour la config (admin uniquement)
+  static Future<Map<String, dynamic>> modifierConfig({
+    String? omNumero,
+    String? omNomCompte,
+    bool?   omActif,
+    String? entrepriseNom,
+    String? entrepriseTel,
+  }) async {
+    final body = <String, dynamic>{};
+    if (omNumero     != null) body['om_numero']      = omNumero;
+    if (omNomCompte  != null) body['om_nom_compte']  = omNomCompte;
+    if (omActif      != null) body['om_actif']       = omActif;
+    if (entrepriseNom != null) body['entreprise_nom'] = entrepriseNom;
+    if (entrepriseTel != null) body['entreprise_tel'] = entrepriseTel;
+    try {
+      final r = await http.put(
+        Uri.parse('$baseUrl/config'),
+        headers: await _headers(),
+        body:    jsonEncode(body),
+      );
+      return _handleResponse(r);
+    } catch (e) {
+      return {'success': false, 'message': 'Erreur réseau'};
+    }
+  }
+
+
 }

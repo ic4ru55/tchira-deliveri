@@ -4,8 +4,14 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
+import '../providers/livraison_provider.dart';
+import '../services/gps_service.dart';
 
 class AuthProvider extends ChangeNotifier {
+  // ✅ Référence au LivraisonProvider pour nettoyage à la déconnexion
+  // (notamment en cas d'expiration de session / 401)
+  LivraisonProvider? _livraisonProvider;
+  void setLivraisonProvider(LivraisonProvider p) => _livraisonProvider = p;
   User?   _user;
   String? _token;
   bool    _isLoading = false;
@@ -161,7 +167,7 @@ class AuthProvider extends ChangeNotifier {
         await _enregistrerTokenFCM();
         notifyListeners();
       } else {
-        await deconnecter();
+        await deconnecter(livraisonProvider: _livraisonProvider);
       }
     } catch (e) {
       debugPrint('⚠️ Vérification session : pas de réseau ($e)');
@@ -193,11 +199,30 @@ class AuthProvider extends ChangeNotifier {
   // ─── DÉCONNEXION ──────────────────────────────────────────────────────────
   // ✅ FIX BUG ONBOARDING : on NE fait plus prefs.clear() — on efface seulement
   // les clés de session. L'onboarding_vu reste intact pour ne pas re-afficher.
-  Future<void> deconnecter() async {
+  Future<void> deconnecter({LivraisonProvider? livraisonProvider}) async {
+    // ══════════════════════════════════════════════════════════════════════
+    // ORDRE IMPORTANT : nettoyer les données AVANT de vider le token
+    // pour éviter tout conflit avec les derniers appels réseau en cours
+    // ══════════════════════════════════════════════════════════════════════
+
+    // 1. Arrêter le GPS — stoppe le stream de position immédiatement
+    await GpsService.instance.arreter();
+
+    // 2. Nettoyer le socket — retire tous les listeners avant déconnexion
+    //    Sans ça, les callbacks de l'utilisateur précédent restent actifs
+    SocketService.deconnecter();
+
+    // 3. Vider TOUTES les données du provider de livraison
+    //    C'est ici que la fuite de données était : _livraisonActive, _mesLivraisons
+    //    etc. restaient en mémoire pour l'utilisateur suivant
+    livraisonProvider?.toutReinitialiser();
+
+    // 4. Vider les données d'authentification
     _user  = null;
     _token = null;
+
+    // 5. Vider le stockage local (session uniquement, pas onboarding_vu)
     final prefs = await SharedPreferences.getInstance();
-    // ✅ Effacer uniquement les données de session, PAS onboarding_vu
     await prefs.remove('token');
     await prefs.remove('userId');
     await prefs.remove('role');
@@ -206,7 +231,7 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove('userTel');
     await prefs.remove('userPhoto');
     // ⚠️ On ne touche PAS 'onboarding_vu' → l'onboarding ne réapparaît plus
-    SocketService.deconnecter();
+
     notifyListeners();
   }
 }

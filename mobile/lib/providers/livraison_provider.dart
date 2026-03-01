@@ -129,13 +129,12 @@ class LivraisonProvider extends ChangeNotifier {
         }
         notifyListeners();
       } else {
-        // Erreur API → on reset pour ne pas bloquer l'écran
-        _livraisonActive = null;
+        // Erreur API → on conserve la mission active connue (ne pas reset)
+        // La bannière reste visible tant que l'API ne confirme pas explicitement null
         notifyListeners();
       }
     } catch (_) {
-      // Erreur réseau → on reset
-      _livraisonActive = null;
+      // ✅ Erreur réseau → NE PAS reset (conserver la dernière mission connue)
       notifyListeners();
     }
   }
@@ -216,6 +215,19 @@ class LivraisonProvider extends ChangeNotifier {
   // ─── LIVREUR : réinitialiser après livraison terminée ─────────────────────
   void reinitialiserLivraisonActive() {
     _livraisonActive = null;
+    notifyListeners();
+  }
+
+  // ─── DÉCONNEXION : vider TOUTES les données de l'utilisateur ──────────────
+  // Appelé par AuthProvider.deconnecter() → aucune donnée ne fuite
+  // vers le prochain utilisateur qui se connecte sur le même appareil
+  void toutReinitialiser() {
+    _livraisonsDisponibles = [];
+    _mesLivraisons         = [];
+    _livraisonActive       = null;
+    _livraisonSuivie       = null;
+    _isLoading             = false;
+    _erreur                = null;
     notifyListeners();
   }
 }

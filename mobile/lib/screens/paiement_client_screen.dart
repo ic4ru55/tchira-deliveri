@@ -14,13 +14,13 @@ import '../services/api_service.dart';
 class PaiementClientScreen extends StatefulWidget {
   final String livraisonId;
   final double montant;
-  final String numeroOM; // numéro OM de Tchira Express
+  // ✅ Supprimé : numeroOM n'est plus hardcodé
+  // Il est chargé depuis l'API /config → modifiable par l'admin sans mise à jour de l'app
 
   const PaiementClientScreen({
     super.key,
     required this.livraisonId,
     required this.montant,
-    this.numeroOM = '72007342', // numéro WhatsApp/OM Tchira Express
   });
 
   @override
@@ -28,14 +28,25 @@ class PaiementClientScreen extends StatefulWidget {
 }
 
 class _PaiementClientScreenState extends State<PaiementClientScreen> {
+  // ✅ Numéro OM chargé depuis l'API
+  String   _numeroOM    = '72007342';
+  String   _nomCompteOM = 'Tchira Express';
+
   String?  _preuveBase64;
   String?  _previewPath;
   bool     _envoi        = false;
   bool     _envoye       = false;
   final    _picker       = ImagePicker();
 
+  @override
+  void initState() {
+    super.initState();
+    // ✅ Charger le numéro OM depuis l'API dès l'ouverture
+    WidgetsBinding.instance.addPostFrameCallback((_) => _chargerConfig());
+  }
+
   String get _codeUSSD =>
-      '*144*4*1*${widget.numeroOM}*${widget.montant.toInt()}#';
+      '*144*4*1*$_numeroOM*${widget.montant.toInt()}#';
 
   Future<void> _choisirImage(ImageSource source) async {
     final picked = await _picker.pickImage(
@@ -81,6 +92,18 @@ class _PaiementClientScreenState extends State<PaiementClientScreen> {
   void _copierCode() {
     Clipboard.setData(ClipboardData(text: _codeUSSD));
     _snack('✅ Code USSD copié !');
+  }
+
+  Future<void> _chargerConfig() async {
+    try {
+      final r = await ApiService.getConfig();
+      if (r['success'] == true && mounted) {
+        setState(() {
+          _numeroOM    = r['om_numero']     as String? ?? _numeroOM;
+          _nomCompteOM = r['om_nom_compte'] as String? ?? _nomCompteOM;
+        });
+      }
+    } catch (_) { /* fallback déjà défini */ }
   }
 
   @override

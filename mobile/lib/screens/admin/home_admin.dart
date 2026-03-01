@@ -33,6 +33,13 @@ class _HomeAdminState extends State<HomeAdmin> {
   List<dynamic> _zones                  = [];
   bool _chargementTarifs                = true;
 
+  // Config OM
+  String _omNumero      = '72007342';
+  String _omNomCompte   = 'Tchira Express';
+  bool   _omActif       = true;
+  bool   _chargementOM  = false;
+  bool   _sauvgardeOM   = false;
+
   final _nomCtrl    = TextEditingController();
   final _emailCtrl  = TextEditingController();
   final _mdpCtrl    = TextEditingController();
@@ -44,7 +51,7 @@ class _HomeAdminState extends State<HomeAdmin> {
   @override
   void initState() {
     super.initState();
-    _chargerStats(); _chargerUtilisateurs(); _chargerLivraisons(); _chargerTarifs();
+    _chargerStats(); _chargerUtilisateurs(); _chargerLivraisons(); _chargerTarifs(); _chargerConfigOM();
   }
 
   @override
@@ -125,6 +132,52 @@ class _HomeAdminState extends State<HomeAdmin> {
     catch (_) { if (mounted) setState(() => _chargementTarifs = false); }
   }
 
+  Future<void> _chargerConfigOM() async {
+    setState(() => _chargementOM = true);
+    try {
+      final r = await ApiService.getConfig();
+      if (!mounted) return;
+      if (r['success'] == true) {
+        setState(() {
+          _omNumero    = r['om_numero']     as String? ?? _omNumero;
+          _omNomCompte = r['om_nom_compte'] as String? ?? _omNomCompte;
+          _omActif     = r['om_actif']      as bool?   ?? _omActif;
+        });
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _chargementOM = false);
+  }
+
+  Future<void> _sauvegarderConfigOM({
+    required String numero,
+    required String nomCompte,
+    required bool   actif,
+  }) async {
+    setState(() => _sauvgardeOM = true);
+    try {
+      final r = await ApiService.modifierConfig(
+        omNumero:    numero,
+        omNomCompte: nomCompte,
+        omActif:     actif,
+      );
+      if (!mounted) return;
+      if (r['success'] == true) {
+        setState(() {
+          _omNumero    = numero;
+          _omNomCompte = nomCompte;
+          _omActif     = actif;
+        });
+        _snack('✅ Configuration Orange Money sauvegardée !', const Color(0xFF16A34A));
+      } else {
+        _snack(r['message'] as String? ?? 'Erreur', Colors.red);
+      }
+    } catch (_) {
+      _snack('Erreur réseau', Colors.red);
+    } finally {
+      if (mounted) setState(() => _sauvgardeOM = false);
+    }
+  }
+
   Future<void> _creerUtilisateur() async {
     if (_nomCtrl.text.isEmpty || _emailCtrl.text.isEmpty || _mdpCtrl.text.isEmpty || _telCtrl.text.isEmpty) { _snack('Remplis tous les champs', Colors.red); return; }
     setState(() => _creationEnCours = true);
@@ -162,7 +215,7 @@ class _HomeAdminState extends State<HomeAdmin> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final pages = [_ongletDashboard(), _ongletComptes(), _ongletLivraisons(), _ongletTarifs(), const ValidationPaiementScreen(), ProfilPage(
+    final pages = [_ongletDashboard(), _ongletComptes(), _ongletLivraisons(), _ongletTarifs(), const ValidationPaiementScreen(), _ongletOrangeMoney(), ProfilPage(
           role: 'admin',
           couleurRole: const Color(0xFF0D7377),
           onDeconnexion: () async {
@@ -223,6 +276,7 @@ class _HomeAdminState extends State<HomeAdmin> {
       {'icon': Icons.list_alt_outlined,     'iconSel': Icons.list_alt,      'label': 'Livraisons'},
       {'icon': Icons.price_change_outlined, 'iconSel': Icons.price_change,  'label': 'Tarifs'},
       {'icon': Icons.verified_outlined,     'iconSel': Icons.verified,      'label': 'Paiements'},
+      {'icon': Icons.phone_android_outlined,'iconSel': Icons.phone_android, 'label': 'Orange M.'},
       {'icon': Icons.person_outline,        'iconSel': Icons.person,        'label': 'Profil'},
     ];
     return Container(
@@ -650,6 +704,395 @@ class _HomeAdminState extends State<HomeAdmin> {
       ])));
     fraisCtrl.dispose();
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ONGLET ORANGE MONEY — Configuration du numéro de réception OM
+  // ══════════════════════════════════════════════════════════════════════════
+  Widget _ongletOrangeMoney() {
+    final safeTop = MediaQuery.of(context).padding.top;
+    final numeroCtrl  = TextEditingController(text: _omNumero);
+    final nomCtrl2    = TextEditingController(text: _omNomCompte);
+    bool  actifLocal  = _omActif;
+
+    return StatefulBuilder(builder: (ctx, setLocal) {
+
+      // ── Taux paiement OM depuis les stats ────────────────────────────────
+      // Stats disponibles pour les chips du header
+      final livrees = (_stats['livrees'] as num?)?.toInt() ?? 0;
+      final caTotal = (_stats['chiffreAffaires'] as num?)?.toDouble() ?? 0;
+      final caJour  = (_stats['caAujourdhui']    as num?)?.toDouble() ?? 0;
+
+      return Column(children: [
+        // ── Header ─────────────────────────────────────────────────────────
+        Container(
+          padding: EdgeInsets.fromLTRB(16, safeTop + 14, 16, 16),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFFF6B00), Color(0xFFFF8C00)],
+              begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(24))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.phone_android, color: Colors.white, size: 24)),
+              const SizedBox(width: 12),
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Orange Money', style: TextStyle(color: Colors.white,
+                      fontSize: 20, fontWeight: FontWeight.w900)),
+                  Text('Paramètres de paiement',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ])),
+              GestureDetector(
+                onTap: _chargerConfigOM,
+                child: Container(padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.refresh, color: Colors.white, size: 18))),
+            ]),
+            const SizedBox(height: 16),
+            // Chips de stats rapides
+            Row(children: [
+              _omStatChip(_fmt(caTotal), 'CA Total', Icons.account_balance_wallet_outlined),
+              const SizedBox(width: 8),
+              _omStatChip(_fmt(caJour), "Aujourd'hui", Icons.today_outlined),
+              const SizedBox(width: 8),
+              _omStatChip('$livrees', 'Livrées', Icons.check_circle_outline),
+            ]),
+          ])),
+
+        // ── Contenu scrollable ──────────────────────────────────────────────
+        Expanded(child: _chargementOM
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B00)))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+                // ── Card config numéro OM ─────────────────────────────────
+                _omSection(
+                  icon: Icons.edit_outlined,
+                  titre: 'Numéro de réception OM',
+                  couleur: const Color(0xFFFF6B00),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    // Numéro actuel (lecture)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                            colors: [Color(0xFFFF6B00), Color(0xFFFF8C00)]),
+                        borderRadius: BorderRadius.circular(14)),
+                      child: Row(children: [
+                        const Icon(Icons.phone_android, color: Colors.white, size: 28),
+                        const SizedBox(width: 12),
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(_omNumero,
+                              style: const TextStyle(color: Colors.white,
+                                  fontSize: 22, fontWeight: FontWeight.w900,
+                                  letterSpacing: 2)),
+                          Text(_omNomCompte,
+                              style: const TextStyle(color: Colors.white70,
+                                  fontSize: 12)),
+                        ]),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _omActif
+                                ? Colors.white.withValues(alpha: 0.2)
+                                : Colors.red.withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(20)),
+                          child: Text(_omActif ? '● ACTIF' : '○ INACTIF',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 10,
+                                  fontWeight: FontWeight.w700))),
+                      ])),
+                    const SizedBox(height: 16),
+                    // Champ modification numéro
+                    _omChamp(
+                      controller: numeroCtrl,
+                      label: 'Nouveau numéro OM',
+                      icone: Icons.dialpad,
+                      clavier: TextInputType.phone,
+                      aide: 'Ex: 72007342 — sans espaces ni indicatif pays',
+                    ),
+                    const SizedBox(height: 10),
+                    // Champ nom du compte
+                    _omChamp(
+                      controller: nomCtrl2,
+                      label: 'Nom du compte OM',
+                      icone: Icons.badge_outlined,
+                      aide: 'Affiché au client lors du paiement',
+                    ),
+                    const SizedBox(height: 14),
+                    // Switch actif/inactif
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0))),
+                      child: Row(children: [
+                        const Icon(Icons.toggle_on_outlined,
+                            color: Color(0xFFFF6B00), size: 22),
+                        const SizedBox(width: 10),
+                        const Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text('Option Orange Money active',
+                              style: TextStyle(fontWeight: FontWeight.w600,
+                                  fontSize: 14)),
+                          Text('Les clients peuvent payer en OM',
+                              style: TextStyle(color: Colors.grey,
+                                  fontSize: 11)),
+                        ])),
+                        Switch(
+                          value: actifLocal,
+                          activeThumbColor: const Color(0xFFFF6B00),
+                          onChanged: (v) => setLocal(() => actifLocal = v)),
+                      ])),
+                    const SizedBox(height: 16),
+                    // Bouton sauvegarder
+                    SizedBox(width: double.infinity, height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: _sauvgardeOM ? null : () => _sauvegarderConfigOM(
+                          numero:     numeroCtrl.text.trim(),
+                          nomCompte:  nomCtrl2.text.trim(),
+                          actif:      actifLocal),
+                        icon: _sauvgardeOM
+                          ? const SizedBox(width: 18, height: 18,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.save_outlined, size: 20),
+                        label: Text(_sauvgardeOM
+                            ? 'Sauvegarde…' : 'Sauvegarder',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 15)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6B00),
+                          foregroundColor: Colors.white,
+                          elevation: 3,
+                          shadowColor: const Color(0xFFFF6B00).withValues(alpha: 0.4),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14))))),
+                  ])),
+                const SizedBox(height: 14),
+
+                // ── Graphique CA 7 jours (orange) ─────────────────────────
+                _graphiqueCAOrange(),
+                const SizedBox(height: 14),
+
+                // ── Aperçu code USSD ──────────────────────────────────────
+                _omSection(
+                  icon: Icons.preview_outlined,
+                  titre: 'Aperçu — ce que voit le client',
+                  couleur: const Color(0xFF1B3A6B),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B3A6B).withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: const Color(0xFF1B3A6B).withValues(alpha: 0.15))),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        const Text('Code USSD généré :',
+                            style: TextStyle(color: Colors.grey, fontSize: 11)),
+                        const SizedBox(height: 4),
+                        Text('*144*4*1*$_omNumero*[MONTANT]#',
+                            style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w700, fontSize: 14,
+                                color: Color(0xFF1B3A6B))),
+                        const SizedBox(height: 8),
+                        const Text('Le client voit également :',
+                            style: TextStyle(color: Colors.grey, fontSize: 11)),
+                        const SizedBox(height: 4),
+                        Text('Numéro : $_omNumero',
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                        Text('Compte : $_omNomCompte',
+                            style: TextStyle(color: Colors.grey.shade500,
+                                fontSize: 13)),
+                      ])),
+                  ])),
+                const SizedBox(height: 20),
+              ]))),
+      ]);
+    });
+  }
+
+  // ── Widget graphique CA orange (version compacte pour l'onglet OM) ────────
+  Widget _graphiqueCAOrange() {
+    final hasData = _statsJours.isNotEmpty;
+    final spots = hasData
+        ? _statsJours.asMap().entries.map((e) {
+            final ca = (e.value['ca'] as num?)?.toDouble() ?? 0;
+            return FlSpot(e.key.toDouble(), ca);
+          }).toList()
+        : List.generate(7, (i) => FlSpot(i.toDouble(), 0));
+
+    final labels = hasData
+        ? _statsJours.map((j) {
+            final d = (j['date'] as String? ?? '').split('-');
+            return d.length >= 3 ? '${d[2]}/${d[1]}' : '';
+          }).toList()
+        : ['J-6','J-5','J-4','J-3','J-2','J-1','Auj'];
+
+    final maxY = spots.fold(0.0, (m, s) => s.y > m ? s.y : m);
+    const orange = Color(0xFFFF6B00);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10, offset: const Offset(0, 3))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+                color: orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.bar_chart, color: orange, size: 18)),
+          const SizedBox(width: 10),
+          const Text("Chiffre d'affaires — 7 jours",
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14,
+                  color: Color(0xFF1B3A6B))),
+          const Spacer(),
+          Text('FCFA', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
+        ]),
+        const SizedBox(height: 16),
+        SizedBox(height: 150,
+          child: LineChart(LineChartData(
+            minY: 0, maxY: maxY > 0 ? maxY * 1.25 : 10000,
+            gridData: FlGridData(
+              show: true, drawVerticalLine: false,
+              horizontalInterval: maxY > 0 ? (maxY / 4).ceilToDouble() : 2500,
+              getDrawingHorizontalLine: (v) =>
+                  FlLine(color: Colors.grey.shade100, strokeWidth: 1)),
+            titlesData: FlTitlesData(
+              bottomTitles: AxisTitles(sideTitles: SideTitles(
+                showTitles: true, reservedSize: 24,
+                getTitlesWidget: (v, _) {
+                  final i = v.toInt();
+                  if (i < 0 || i >= labels.length) return const SizedBox.shrink();
+                  return Padding(padding: const EdgeInsets.only(top: 4),
+                    child: Text(labels[i],
+                        style: TextStyle(fontSize: 9, color: Colors.grey.shade400)));
+                })),
+              leftTitles: AxisTitles(sideTitles: SideTitles(
+                  showTitles: true, reservedSize: 38,
+                  getTitlesWidget: (v, _) => Text(_fmtK(v),
+                      style: TextStyle(fontSize: 8, color: Colors.grey.shade400)))),
+              topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            ),
+            borderData: FlBorderData(show: false),
+            lineTouchData: LineTouchData(
+              touchTooltipData: LineTouchTooltipData(
+                getTooltipItems: (s) => s.map((sp) => LineTooltipItem(
+                    '${_fmt(sp.y)} F',
+                    const TextStyle(color: Colors.white,
+                        fontWeight: FontWeight.bold, fontSize: 11))).toList())),
+            lineBarsData: [LineChartBarData(
+              spots: spots, isCurved: true, curveSmoothness: 0.4,
+              color: orange, barWidth: 2.5,
+              belowBarData: BarAreaData(show: true,
+                gradient: LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [orange.withValues(alpha: 0.25),
+                             orange.withValues(alpha: 0.0)])),
+              dotData: FlDotData(show: true,
+                getDotPainter: (spot, _, _, _) => FlDotCirclePainter(
+                    radius: 3, color: Colors.white,
+                    strokeWidth: 2, strokeColor: orange)),
+            )],
+          ))),
+      ]));
+  }
+
+  // ── Helpers visuels pour l'onglet OM ────────────────────────────────────
+  Widget _omStatChip(String val, String label, IconData icon) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(10)),
+      child: Column(children: [
+        Icon(icon, color: Colors.white70, size: 14),
+        const SizedBox(height: 3),
+        Text(val, style: const TextStyle(color: Colors.white,
+            fontWeight: FontWeight.w800, fontSize: 13)),
+        Text(label, style: const TextStyle(color: Colors.white60, fontSize: 9)),
+      ])));
+
+  Widget _omSection({required IconData icon, required String titre,
+      required Color couleur, required Widget child}) =>
+    Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10, offset: const Offset(0, 3))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(height: 4,
+            decoration: BoxDecoration(
+                color: couleur,
+                borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16)))),
+        Padding(padding: const EdgeInsets.all(16), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                  color: couleur.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, color: couleur, size: 16)),
+            const SizedBox(width: 8),
+            Text(titre, style: TextStyle(fontWeight: FontWeight.w800,
+                fontSize: 14, color: couleur)),
+          ]),
+          const SizedBox(height: 12),
+          Container(height: 1, color: const Color(0xFFF0F4F8)),
+          const SizedBox(height: 12),
+          child,
+        ])),
+      ]));
+
+  Widget _omChamp({
+    required TextEditingController controller,
+    required String label,
+    required IconData icone,
+    String? aide,
+    TextInputType clavier = TextInputType.text,
+  }) => TextField(
+    controller: controller,
+    keyboardType: clavier,
+    decoration: InputDecoration(
+      labelText: label,
+      helperText: aide,
+      helperStyle: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+      prefixIcon: Icon(icone, color: const Color(0xFFFF6B00), size: 18),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 2)),
+      filled: true, fillColor: const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)));
 
   String _fmt(dynamic m) { if (m == null) return '0'; final v = (m as num).toInt(); return v.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (x) => '${x[1]} '); }
   String _labelRole(String r) { switch (r) { case 'tous': return 'Tous'; case 'livreur': return 'Livreur'; case 'receptionniste': return 'Réceptionniste'; case 'client': return 'Client'; case 'admin': return 'Admin'; default: return r; } }

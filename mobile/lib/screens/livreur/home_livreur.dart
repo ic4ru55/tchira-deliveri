@@ -8,6 +8,8 @@ import '../../models/livraison.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../services/api_service.dart';
 import 'mission_screen.dart';
+import 'map_missions_screen.dart';
+import 'detail_mission_screen.dart';
 import '../profil_page.dart';
 
 class HomeLibreur extends StatefulWidget {
@@ -68,19 +70,20 @@ class _HomeLibreurState extends State<HomeLibreur> with TickerProviderStateMixin
   }
 
   // ── Filtrage des missions ─────────────────────────────────────────────────
+  // ✅ FIX: utilise liv.modePaiement (getter safe depuis _raw) → plus de crash
   List<Livraison> _filtrer(List<Livraison> all) {
     switch (_filtre) {
-      case 'cash': return all.where((l) {
-        final mode = (l as dynamic).modePaiement as String? ?? 'cash';
-        return mode == 'cash';
-      }).toList();
-      case 'om': return all.where((l) {
-        final mode = (l as dynamic).modePaiement as String? ?? 'cash';
-        return mode == 'om' || mode == 'orange_money';
-      }).toList();
-      case 'top': return all.where((l) => l.prix > 2000).toList()
-        ..sort((a, b) => b.prix.compareTo(a.prix));
-      default: return all;
+      case 'cash':
+        return all.where((l) => l.modePaiement == 'cash').toList();
+      case 'om':
+        return all.where((l) =>
+            l.modePaiement == 'om' ||
+            l.modePaiement == 'orange_money').toList();
+      case 'top':
+        return all.where((l) => l.prix > 2000).toList()
+          ..sort((a, b) => b.prix.compareTo(a.prix));
+      default:
+        return all;
     }
   }
 
@@ -282,6 +285,17 @@ class _HomeLibreurState extends State<HomeLibreur> with TickerProviderStateMixin
                   color: _teal.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(9)),
               child: const Icon(Icons.refresh, color: _teal, size: 16))),
+          const SizedBox(width: 6),
+          // ✅ Bouton vue carte Phase 28A
+          GestureDetector(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MapMissionsScreen())),
+            child: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                  color: _navy.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(9)),
+              child: const Icon(Icons.map_outlined, color: _navy, size: 16))),
         ]),
       ),
 
@@ -301,7 +315,20 @@ class _HomeLibreurState extends State<HomeLibreur> with TickerProviderStateMixin
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 30),
                   physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: dispo.length,
-                  itemBuilder: (_, i) => _carteMission(dispo[i], prov, i),
+                  itemBuilder: (_, i) {
+                    final mission = dispo[i];
+                    return GestureDetector(
+                      // ✅ Tap sur la carte = voir tous les détails
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) =>
+                              DetailMissionScreen(livraison: mission))),
+                      // ✅ Absorb les taps sur le bouton (ne pas propager au GestureDetector)
+                      child: AbsorbPointer(
+                        absorbing: false,
+                        child: _carteMission(mission, prov, i),
+                      ),
+                    );
+                  },
                 ),
               ),
       ),
@@ -832,9 +859,10 @@ class _HomeLibreurState extends State<HomeLibreur> with TickerProviderStateMixin
         ]),
       ]));
 
+  // ✅ FIX: getters directs sur le modèle → zéro crash
   Widget _badgePaiement(Livraison liv) {
-    final mode = (liv as dynamic).modePaiement as String? ?? 'cash';
-    final stat = (liv as dynamic).statutPaiement as String? ?? '';
+    final mode = liv.modePaiement;
+    final stat = liv.statutPaiement;
     Color c; IconData ic; String lb;
     if (mode == 'cash') {
       c = const Color(0xFFF97316); ic = Icons.payments_outlined; lb = 'Cash';

@@ -38,6 +38,15 @@ class TchiraApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => LivraisonProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        // ✅ Connecte AuthProvider → LivraisonProvider pour nettoyage à la déconnexion
+        // Quand LivraisonProvider change, met à jour la référence dans AuthProvider
+        ChangeNotifierProxyProvider<LivraisonProvider, AuthProvider>(
+          create:  (ctx) => ctx.read<AuthProvider>(),
+          update: (ctx, livraisonProv, authProv) {
+            authProv!.setLivraisonProvider(livraisonProv);
+            return authProv;
+          },
+        ),
       ],
       child: const _TchiraMaterialApp(),
     );

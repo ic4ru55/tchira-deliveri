@@ -78,8 +78,19 @@ class SocketService {
     });
   }
 
+  // ─── Nettoyer tous les listeners avant déconnexion ──────────────────────────
+  // Sans ça, les callbacks d'un user restent actifs pour le user suivant
+  static void nettoyerListeners() {
+    _socket?.off('statut_mis_a_jour');
+    _socket?.off('position_mise_a_jour');
+    _socket?.off('nouvelle_livraison');
+    _socket?.off('livraison_mise_a_jour');
+  }
+
   static void deconnecter() {
+    nettoyerListeners();   // ✅ Nettoyer avant de déconnecter
     _socket?.disconnect();
+    _socket?.destroy();    // ✅ Détruire la socket complètement
     _socket = null;
   }
 }
