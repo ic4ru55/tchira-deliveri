@@ -39,6 +39,10 @@ class _HomeAdminState extends State<HomeAdmin> {
   bool   _omActif       = true;
   bool   _chargementOM  = false;
   bool   _sauvgardeOM   = false;
+  // ✅ Controllers OM dans le State (pas dans StatefulBuilder)
+  // Si déclarés dans le builder → recréés à chaque rebuild → anciennes valeurs
+  final _omNumeroCtrl   = TextEditingController();
+  final _omNomCompteCtrl= TextEditingController();
 
   final _nomCtrl    = TextEditingController();
   final _emailCtrl  = TextEditingController();
@@ -55,7 +59,11 @@ class _HomeAdminState extends State<HomeAdmin> {
   }
 
   @override
-  void dispose() { _nomCtrl.dispose(); _emailCtrl.dispose(); _mdpCtrl.dispose(); _telCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _nomCtrl.dispose(); _emailCtrl.dispose(); _mdpCtrl.dispose(); _telCtrl.dispose();
+    _omNumeroCtrl.dispose(); _omNomCompteCtrl.dispose(); // ✅ OM controllers
+    super.dispose();
+  }
 
   Future<void> _chargerStats() async {
     setState(() => _chargementStats = true);
@@ -138,11 +146,17 @@ class _HomeAdminState extends State<HomeAdmin> {
       final r = await ApiService.getConfig();
       if (!mounted) return;
       if (r['success'] == true) {
+        final numero    = r['om_numero']     as String? ?? _omNumero;
+        final nomCompte = r['om_nom_compte'] as String? ?? _omNomCompte;
+        final actif     = r['om_actif']      as bool?   ?? _omActif;
         setState(() {
-          _omNumero    = r['om_numero']     as String? ?? _omNumero;
-          _omNomCompte = r['om_nom_compte'] as String? ?? _omNomCompte;
-          _omActif     = r['om_actif']      as bool?   ?? _omActif;
+          _omNumero    = numero;
+          _omNomCompte = nomCompte;
+          _omActif     = actif;
         });
+        // ✅ Mettre à jour les controllers pour que les champs affichent la bonne valeur
+        _omNumeroCtrl.text    = numero;
+        _omNomCompteCtrl.text = nomCompte;
       }
     } catch (_) {}
     if (mounted) setState(() => _chargementOM = false);
@@ -167,6 +181,9 @@ class _HomeAdminState extends State<HomeAdmin> {
           _omNomCompte = nomCompte;
           _omActif     = actif;
         });
+        // ✅ Sync controllers avec les nouvelles valeurs
+        _omNumeroCtrl.text    = numero;
+        _omNomCompteCtrl.text = nomCompte;
         _snack('✅ Configuration Orange Money sauvegardée !', const Color(0xFF16A34A));
       } else {
         _snack(r['message'] as String? ?? 'Erreur', Colors.red);
@@ -710,14 +727,13 @@ class _HomeAdminState extends State<HomeAdmin> {
   // ══════════════════════════════════════════════════════════════════════════
   Widget _ongletOrangeMoney() {
     final safeTop = MediaQuery.of(context).padding.top;
-    final numeroCtrl  = TextEditingController(text: _omNumero);
-    final nomCtrl2    = TextEditingController(text: _omNomCompte);
-    bool  actifLocal  = _omActif;
+    // Initialiser les controllers avec les valeurs actuelles si vides
+    if (_omNumeroCtrl.text.isEmpty)    _omNumeroCtrl.text    = _omNumero;
+    if (_omNomCompteCtrl.text.isEmpty) _omNomCompteCtrl.text = _omNomCompte;
 
     return StatefulBuilder(builder: (ctx, setLocal) {
 
-      // ── Taux paiement OM depuis les stats ────────────────────────────────
-      // Stats disponibles pour les chips du header
+      // ── Stats pour les chips du header ────────────────────────────────────
       final livrees = (_stats['livrees'] as num?)?.toInt() ?? 0;
       final caTotal = (_stats['chiffreAffaires'] as num?)?.toDouble() ?? 0;
       final caJour  = (_stats['caAujourdhui']    as num?)?.toDouble() ?? 0;
@@ -813,7 +829,7 @@ class _HomeAdminState extends State<HomeAdmin> {
                     const SizedBox(height: 16),
                     // Champ modification numéro
                     _omChamp(
-                      controller: numeroCtrl,
+                      controller: _omNumeroCtrl,
                       label: 'Nouveau numéro OM',
                       icone: Icons.dialpad,
                       clavier: TextInputType.phone,
@@ -822,7 +838,7 @@ class _HomeAdminState extends State<HomeAdmin> {
                     const SizedBox(height: 10),
                     // Champ nom du compte
                     _omChamp(
-                      controller: nomCtrl2,
+                      controller: _omNomCompteCtrl,
                       label: 'Nom du compte OM',
                       icone: Icons.badge_outlined,
                       aide: 'Affiché au client lors du paiement',
@@ -851,18 +867,18 @@ class _HomeAdminState extends State<HomeAdmin> {
                                   fontSize: 11)),
                         ])),
                         Switch(
-                          value: actifLocal,
+                          value: _omActif,
                           activeThumbColor: const Color(0xFFFF6B00),
-                          onChanged: (v) => setLocal(() => actifLocal = v)),
+                          onChanged: (v) => setState(() => _omActif = v)),
                       ])),
                     const SizedBox(height: 16),
                     // Bouton sauvegarder
                     SizedBox(width: double.infinity, height: 52,
                       child: ElevatedButton.icon(
                         onPressed: _sauvgardeOM ? null : () => _sauvegarderConfigOM(
-                          numero:     numeroCtrl.text.trim(),
-                          nomCompte:  nomCtrl2.text.trim(),
-                          actif:      actifLocal),
+                          numero:     _omNumeroCtrl.text.trim(),
+                          nomCompte:  _omNomCompteCtrl.text.trim(),
+                          actif:      _omActif),
                         icon: _sauvgardeOM
                           ? const SizedBox(width: 18, height: 18,
                               child: CircularProgressIndicator(

@@ -11,11 +11,27 @@ exports.creerLivraison = async (req, res) => {
     const {
       adresse_depart, adresse_arrivee, coordonnees_depart, coordonnees_arrivee,
       description_colis, categorie_colis, zone, prix, prix_base, frais_zone,
-      client_nom, client_telephone, client_id,
+      client_nom, client_telephone, client_id, mode_paiement,
     } = req.body;
 
     let clientId = req.user.id;
     if (req.user.role === 'receptionniste' && client_id) { clientId = client_id; }
+
+    // ══════════════════════════════════════════════════════════════════
+    // SCÉNARIO OM vs CASH :
+    //
+    //  CASH → statut 'en_attente' directement
+    //         Les livreurs sont notifiés immédiatement
+    //
+    //  OM   → statut 'en_attente_paiement'
+    //         Le client doit d'abord soumettre sa preuve de paiement
+    //         Les livreurs NE sont PAS notifiés
+    //         Ce sont le réceptionniste/admin qui valident la preuve
+    //         → APRÈS validation : statut passe à 'en_attente'
+    //           ET les livreurs sont notifiés (voir paiementController.validerPreuve)
+    // ══════════════════════════════════════════════════════════════════
+    const modePaie   = mode_paiement === 'om' ? 'om' : 'cash';
+    const statutInit = modePaie === 'om' ? 'en_attente_paiement' : 'en_attente';
 
     const livraison = await Delivery.create({
       client:              clientId,
@@ -30,25 +46,29 @@ exports.creerLivraison = async (req, res) => {
       frais_zone:          frais_zone          || 0,
       client_nom_tel:       client_nom       || '',
       client_telephone_tel: client_telephone || '',
-      mode_paiement:        req.body.mode_paiement || 'cash',
+      mode_paiement:       modePaie,
+      statut:              statutInit,
+      
     });
 
     await livraison.populate('client', 'nom email telephone');
 
-    // ✅ CIBLAGE CORRECT : uniquement les LIVREURS reçoivent la notif de nouvelle mission
-    const livreurs = await User.find({
-      role:      'livreur',
-      actif:     true,
-      fcm_token: { $ne: null },
-    });
-
-    for (const livreur of livreurs) {
-      await envoyerNotification({
-        fcmToken: livreur.fcm_token,
-        titre:    '📦 Nouvelle mission disponible !',
-        corps:    `${adresse_depart} → ${adresse_arrivee} — ${prix} FCFA`,
-        donnees:  { type: 'nouvelle_livraison', livraison_id: livraison._id.toString() },
+    // ── Notifier les livreurs UNIQUEMENT si paiement cash (immédiat) ──
+    // Pour OM : les livreurs seront notifiés après validation de la preuve
+    if (modePaie === 'cash') {
+      const livreurs = await User.find({
+        role:      'livreur',
+        actif:     true,
+        fcm_token: { $ne: null },
       });
+      for (const livreur of livreurs) {
+        await envoyerNotification({
+          fcmToken: livreur.fcm_token,
+          titre:    '📦 Nouvelle mission disponible !',
+          corps:    `${adresse_depart} \u2192 ${adresse_arrivee} — ${prix} FCFA`,
+          donnees:  { type: 'nouvelle_livraison', livraison_id: livraison._id.toString() },
+        }).catch(() => {});
+      }
     }
 
     res.status(201).json({ success: true, livraison });
@@ -60,9 +80,12 @@ exports.creerLivraison = async (req, res) => {
 // ─── LIVRAISONS DISPONIBLES (livreur) ────────────────────────────────────────
 exports.getLivraisonsDisponibles = async (req, res) => {
   try {
+    // ✅ Phase 28A: on inclut les coordonnées pour la vue carte livreur
+    // Les champs coordonnees_depart/arrivee sont déjà dans le schéma Delivery
     const livraisons = await Delivery
       .find({ statut: 'en_attente', livreur: null })
       .populate('client', 'nom telephone')
+      .select('adresse_depart adresse_arrivee coordonnees_depart coordonnees_arrivee prix mode_paiement statut_paiement description_colis categorie_colis createdAt client')
       .sort({ createdAt: -1 });
     res.status(200).json({ success: true, nombre: livraisons.length, livraisons });
   } catch (error) {

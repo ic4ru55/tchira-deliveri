@@ -10,7 +10,6 @@ const adminRoutes         = require('./routes/adminRoutes');
 const notificationsRoutes = require('./routes/notifications');
 const profilRoutes        = require('./routes/profilRoutes');
 const paiementRoutes      = require('./routes/paiementRoutes');
-const configRoutes = require('./routes/configRoutes');
 
 // ✅ Initialiser Firebase Admin au démarrage du serveur
 const { initialiserFirebase } = require('./services/firebaseService');
@@ -57,7 +56,8 @@ app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/profil',        profilRoutes);
 app.use('/api/paiements',     paiementRoutes);
-app.use('/api/config', configRoutes);
+const configRoutes = require('./routes/configRoutes');
+app.use('/api/config',        configRoutes);
 // ✅ AJOUT — était manquant → crash profil
 
 // ─── Route de santé ───────────────────────────────────────────────────────────

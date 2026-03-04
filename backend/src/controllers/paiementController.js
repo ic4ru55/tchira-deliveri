@@ -61,15 +61,36 @@ exports.validerPreuve = async (req, res) => {
       liv.preuve_paiement.verifie_le  = new Date();
       liv.preuve_paiement.verifie_par = req.user._id;
 
-      // Notifier le client
+      // ══════════════════════════════════════════════════════════════
+      // SCÉNARIO OM — Paiement validé :
+      //   1. La livraison passe à 'en_attente' → visible aux livreurs
+      //   2. Le CLIENT est notifié : paiement ok, livreur en route
+      //   3. TOUS les livreurs actifs sont notifiés : nouvelle mission
+      // ══════════════════════════════════════════════════════════════
+
+      // 1. Rendre la livraison visible aux livreurs
+      liv.statut = 'en_attente';
+
+      // 2. Notifier le client
       if (liv.client?.fcm_token) {
         await envoyerNotification({
           fcmToken: liv.client.fcm_token,
           titre:    '✅ Paiement confirmé !',
-          corps:    'Votre paiement a été vérifié. Un livreur va prendre en charge votre colis.',
+          corps:    'Votre paiement Orange Money a été vérifié. Les livreurs peuvent maintenant prendre en charge votre colis.',
           donnees:  { type: 'paiement_verifie', livraison_id: id },
         }).catch(() => {});
       }
+
+      // 3. Notifier TOUS les livreurs actifs → nouvelle mission disponible
+      const livreurs = await User.find({ role: 'livreur', actif: true, fcm_token: { $ne: null } });
+      await Promise.all(livreurs.map(l =>
+        envoyerNotification({
+          fcmToken: l.fcm_token,
+          titre:    '📦 Nouvelle mission disponible !',
+          corps:    `${liv.adresse_depart} \u2192 ${liv.adresse_arrivee} — ${liv.prix} FCFA`,
+          donnees:  { type: 'nouvelle_livraison', livraison_id: id },
+        }).catch(() => {})
+      ));
 
     } else {
       liv.statut_paiement             = 'rejete';
